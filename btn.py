@@ -406,7 +406,8 @@ class TorrentEntry(object):
                 raise APIError(response.text, response.status_code)
             self._raw_torrent = response.content
             if self.api.store_raw_torrent:
-                os.makedirs(os.path.dirname(self.raw_torrent_path))
+                if not os.path.exists(os.path.dirname(self.raw_torrent_path)):
+                    os.makedirs(os.path.dirname(self.raw_torrent_path))
                 with open(self.raw_torrent_path, mode="wb") as f:
                     f.write(self._raw_torrent)
             return self._raw_torrent
