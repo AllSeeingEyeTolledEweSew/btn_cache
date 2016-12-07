@@ -389,7 +389,7 @@ class TorrentEntry(object):
     @property
     def raw_torrent_path(self):
         name = "%s.torrent" % self.id
-        return os.path.join(self.api.cache_path, "raw_torrents", name)
+        return os.path.join(self.api.cache_path, "torrents", name)
 
     @property
     def raw_torrent(self):
