@@ -572,7 +572,7 @@ class API(object):
 
     def call_url(self, method, url, **kwargs):
         if self.token_bucket:
-            self.tokn_bucket.consume(1)
+            self.token_bucket.consume(1)
         log().debug("%s", url)
         response = method(url, **kwargs)
         if response.status_code != requests.codes.ok:
