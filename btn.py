@@ -478,19 +478,25 @@ class API(object):
     def __init__(self, key=None, passkey=None, authkey=None,
                  api_token_bucket=None, token_bucket=None, cache_path=None,
                  store_raw_torrent=None):
+        if cache_path is None:
+            cache_path = os.path.expanduser("~/.cache/btn")
+
         self.cache_path = cache_path
 
-        if self.cache_path is not None:
-            with open(self.cache_path) as f:
+        if os.path.exists(self.config_path):
+            with open(self.config_path) as f:
                 config = yaml.load(f)
-            self.key = config.get("key")
-            self.passkey = config.get("passkey")
-            self.authkey = config.get("authkey")
-            self.token_rate = config.get("token_rate")
-            self.token_period = config.get("token_period")
-            self.api_token_rate = config.get("api_token_rate")
-            self.api_token_period = config.get("api_token_period")
-            self.store_raw_torrent = config.get("store_raw_torrent")
+        else:
+                config = {}
+
+        self.key = config.get("key")
+        self.passkey = config.get("passkey")
+        self.authkey = config.get("authkey")
+        self.token_rate = config.get("token_rate")
+        self.token_period = config.get("token_period")
+        self.api_token_rate = config.get("api_token_rate")
+        self.api_token_period = config.get("api_token_period")
+        self.store_raw_torrent = config.get("store_raw_torrent")
 
         if key is not None:
             self.key = key
@@ -498,14 +504,6 @@ class API(object):
             self.passkey = passkey
         if authkey is not None:
             self.authkey = authkey
-        if token_rate is not None:
-            self.token_rate = token_rate
-        if token_period is not None:
-            self.token_period = token_period
-        if api_token_rate is not None:
-            self.api_token_rate = api_token_rate
-        if api_token_period is not None:
-            self.api_token_period = api_token_period
         if store_raw_torrent is not None:
             self.store_raw_torrent = store_raw_torrent
 
@@ -521,15 +519,14 @@ class API(object):
         if token_bucket is not None:
             self.token_bucket = token_bucket
         else:
-            self.token_bucket = token_bucket_lib.ScheduledRefillTokenBucket(
+            self.token_bucket = token_bucket_lib.ScheduledTokenBucket(
                 self.db_path, self.key, self.token_rate, self.token_period)
         if api_token_bucket is not None:
             self.api_token_bucket = api_token_bucket
         else:
-            self.api_token_bucket = (
-                token_bucket_lib.ScheduledRefillTokenBucket(
-                    self.db_path, self.key, self.api_token_rate,
-                    self.api_token_period))
+            self.api_token_bucket = token_bucket_lib.ScheduledTokenBucket(
+                self.db_path, self.key, self.api_token_rate,
+                self.api_token_period)
 
         self._local = threading.local()
         self._db = None
@@ -553,13 +550,15 @@ class API(object):
             return db
         if self.db_path is None:
             return None
+        if not os.path.exists(os.path.dirname(self.db_path)):
+            os.makedirs(os.path.dirname(self.db_path))
         db = sqlite3.connect(self.db_path)
+        self._local.db = db
         db.row_factory = sqlite3.Row
         with db:
             Series._create_schema(self)
             Group._create_schema(self)
             TorrentEntry._create_schema(self)
-        self._local.db = db
         return db
 
     def mk_url(self, host, path, **qdict):
