@@ -397,7 +397,7 @@ class TorrentEntry(object):
             if self._raw_torrent is not None:
                 return self._raw_torrent
             if os.path.exists(self.raw_torrent_path):
-                with open(self.raw_torrent_path) as f:
+                with open(self.raw_torrent_path, mode="rb") as f:
                     self._raw_torrent = f.read()
                 return self._raw_torrent
             log().debug("Fetching raw torrent for %s", repr(self))
