@@ -484,7 +484,7 @@ class API(object):
             with open(self.cache_path) as f:
                 config = yaml.load(f)
             self.key = config.get("key")
-            self.passkey = config.key("passkey")
+            self.passkey = config.get("passkey")
             self.authkey = config.get("authkey")
             self.token_rate = config.get("token_rate")
             self.token_period = config.get("token_period")
