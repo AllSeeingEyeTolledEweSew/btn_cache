@@ -663,6 +663,16 @@ class API(object):
         tes= sorted(tes, key=lambda te: -te.id)
         return SearchResult(sr_json["results"], tes)
 
+    def getTorrentsPaged(**kwargs):
+        offset = 0
+        while True:
+            sr = self.getTorrents(offset=offset, results=2**31, **kwargs)
+            for te in sr.torrents:
+                yield te
+            if offset + len(sr.torrents) >= sr.results:
+                break
+            offset += len(sr.torrents)
+
     def getTorrentByIdJson(self, id):
         return self.call_api("getTorrentById", id)
 
