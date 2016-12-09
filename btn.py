@@ -440,6 +440,85 @@ class TorrentEntry(object):
         return "<TorrentEntry %d \"%s\">" % (self.id, self.release_name)
 
 
+class UserInfo(object):
+
+    @classmethod
+    def _create_schema(cls, api):
+        api.db.execute(
+            "create table if not exists user_info ("
+            "id integer primary key, "
+            "bonus integer not null, "
+            "class_name text not null, "
+            "class_level integer not null, "
+            "download integer not null, "
+            "email text not null, "
+            "enabled integer not null, "
+            "hnr integer not null, "
+            "invites integer not null, "
+            "join_date integer not null, "
+            "lumens integer not null, "
+            "paranoia integer not null, "
+            "snatches integer not null, "
+            "title text not null, "
+            "upload integer not null, "
+            "uploads_snatched integer not null, "
+            "username text not null)")
+
+    @classmethod
+    def _from_db(cls, api):
+        row = api.db.execute("select * from user_info limit 1").fetchone()
+        if not row:
+            return None
+        return cls(api, **row)
+
+
+    def __init__(self, api, id=None, bonus=None, class_name=None,
+                 class_level=None, download=None, email=None, enabled=None,
+                 hnr=None, invites=None, join_date=None, lumens=None,
+                 paranoia=None, snatches=None, title=None, upload=None,
+                 uploads_snatched=None, username=None):
+        self.api = api
+
+        self.id = id
+        self.bonus = bonus
+        self.class_name = class_name
+        self.class_level = class_level
+        self.download = download
+        self.email = email
+        self.enabled = enabled
+        self.hnr = hnr
+        self.invites = invites
+        self.join_date = join_date
+        self.lumens = lumens
+        self.paranoia = paranoia
+        self.snatches = snatches
+        self.title = title
+        self.upload = upload
+        self.uploads_snatched = uploads_snatched
+        self.username = username
+
+    def serialize(self):
+        self.api.db.execute("delete from user_info")
+        self.api.db.execute(
+            "insert or replace into user_info ("
+            "id, bonus, class_name, class_level, download, "
+            "email, enabled, hnr, invites, join_date, "
+            "lumens, paranoia, snatches, title, upload, "
+            "uploads_snatched, username) "
+            "values ("
+            "?, ?, ?, ?, ?, "
+            "?, ?, ?, ?, ?, "
+            "?, ?, ?, ?, ?, "
+            "?, ?)",
+            (self.id, self.bonus, self.class_name, self.class_level,
+             self.download, self.email, self.enabled, self.hnr, self.invites,
+             self.join_date, self.lumens, self.paranoia, self.snatches,
+             self.title, self.upload, self.uploads_snatched, self.username))
+
+    def __repr__(self):
+        return "<UserInfo %s \"%s\">" % (self.id, self.username)
+
+
 class SearchResult(object):
 
     def __init__(self, results, torrents):
@@ -475,6 +554,10 @@ class API(object):
 
     DEFAULT_API_TOKEN_RATE = 150
     DEFAULT_API_TOKEN_PERIOD = 3600
+
+    CACHE_FIRST = "first"
+    CACHE_BYPASS = "bypass"
+    CACHE_ONLY = "only"
 
     def __init__(self, key=None, passkey=None, authkey=None,
                  api_token_bucket=None, token_bucket=None, cache_path=None,
@@ -560,6 +643,7 @@ class API(object):
             Series._create_schema(self)
             Group._create_schema(self)
             TorrentEntry._create_schema(self)
+            UserInfo._create_schema(self)
         return db
 
     def mk_url(self, host, path, **qdict):
@@ -626,7 +710,7 @@ class API(object):
 
         return response["result"]
 
-    def from_db(self, id):
+    def _from_db(self, id):
         return TorrentEntry._from_db(self, id)
 
     def getTorrentsJson(self, results=10, offset=0, **kwargs):
@@ -651,7 +735,17 @@ class API(object):
             size=int(tj["Size"]), snatched=int(tj["Snatched"]),
             source=tj["Source"], time=int(tj["Time"]))
 
-    def getTorrents(self, results=10, offset=0, **kwargs):
+    def getTorrents(self, cache=None, results=10, offset=0, **kwargs):
+        if cache == self.CACHE_ONLY:
+            assert offset == 0, offset
+            assert results >= 1, results
+            assert tuple(kwargs.keys()) == ("hash",), kwargs
+            row = self.db.execute(
+                "select id from torrent_entry where info_hash = ?",
+                (kwargs["hash"],)).fetchone()
+            if row:
+                return SearchResult(1, [self._from_db(row[0])])
+            return SearchResult(0, [])
         sr_json = self.getTorrentsJson(
             results=results, offset=offset, **kwargs)
         tes = []
@@ -676,7 +770,15 @@ class API(object):
     def getTorrentByIdJson(self, id):
         return self.call_api("getTorrentById", id)
 
-    def getTorrentById(self, id):
+    def getTorrentById(self, id, cache=None):
+        if cache is None:
+            cache = self.CACHE_FIRST
+        if cache in (self.CACHE_FIRST, self.CACHE_ONLY):
+            te = self._from_db(id)
+            if te:
+                return te
+            if cache == self.CACHE_ONLY:
+                return None
         tj = self.getTorrentByIdJson(id)
         te = self._torrent_entry_from_json(tj) if tj else None
         if te:
@@ -687,5 +789,33 @@ class API(object):
     def getUserSnatchlistJson(self, results=10, offset=0):
         return self.call_api("getUserSnatchlist", results, offset)
 
+    def _user_info_from_json(self, j):
+        return UserInfo(
+            self, id=int(j["UserID"]), bonus=int(j["Bonus"]),
+            class_name=j["Class"], class_level=int(j["ClassLevel"]),
+            download=int(j["Download"]), email=j["Email"],
+            enabled=bool(int(j["Enabled"])), hnr=int(j["HnR"]),
+            invites=int(j["Invites"]), join_date=int(j["JoinDate"]),
+            lumens=int(j["Lumens"]), paranoia=int(j["Paranoia"]),
+            snatches=int(j["Snatches"]), title=j["Title"],
+            upload=int(j["Upload"]),
+            uploads_snatched=int(j["UploadsSnatched"]), username=j["Username"])
+
     def userInfoJson(self):
         return self.call_api("userInfo")
+
+    def userInfo(self, cache=None):
+        if cache is None:
+            cache = self.CACHE_FIRST
+        if cache in (self.CACHE_FIRST, self.CACHE_ONLY):
+            ui = UserInfo._from_db(self)
+            if ui:
+                return ui
+            if cache == self.CACHE_ONLY:
+                return None
+        uj = self.userInfoJson()
+        ui = self._user_info_from_json(uj) if uj else None
+        if ui:
+            with self.db:
+                ui.serialize()
+        return ui
