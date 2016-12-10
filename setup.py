@@ -23,4 +23,14 @@ setup(
         "requests>=2.12.3",
         "token_bucket>=0.1.0",
     ],
+    extras_require={
+        "feeds": [
+            "feedparser>=5.2.1",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            "btn_scrape = btn.cli.scrape:main [feeds]",
+        ],
+    },
 )
