@@ -724,8 +724,8 @@ class API(object):
             self, id=tj["SeriesID"], name=tj["Series"],
             banner=tj["SeriesBanner"], poster=tj["SeriesPoster"],
             imdb_id=tj["ImdbID"],
-            tvdb_id=int(tj["TvdbID"]) if tj["TvdbID"] != "0" else None,
-            tvrage_id=int(tj["TvrageID"]) if tj["TvrageID"] != "0" else None,
+            tvdb_id=int(tj["TvdbID"]) if tj.get("TvdbID") else None,
+            tvrage_id=int(tj["TvrageID"]) if tj.get("TvrageID") else None,
             youtube_trailer=tj["YoutubeTrailer"] or None)
         group = Group(
             self, id=tj["GroupID"], category=tj["Category"],
