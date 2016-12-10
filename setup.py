@@ -16,7 +16,7 @@ setup(
     author_email="allseeingeyetolledewesew@protonmail.com",
     url="http://github.com/AllSeeingEyeTolledEweSew/btn",
     license="Unlicense",
-    py_modules=["btn"],
+    packages=find_packages(),
     install_requires=[
         "better-bencode>=0.2.1",
         "PyYAML>=3.12",
