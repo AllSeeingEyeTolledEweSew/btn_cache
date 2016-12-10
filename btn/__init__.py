@@ -606,8 +606,9 @@ class API(object):
         if token_bucket is not None:
             self.token_bucket = token_bucket
         else:
-            self.token_bucket = token_bucket_lib.ScheduledTokenBucket(
-                self.db_path, self.key, self.token_rate, self.token_period)
+            self.token_bucket = token_bucket_lib.TokenBucket(
+                self.db_path, "web:" + self.key, self.token_rate,
+                self.token_period)
         if api_token_bucket is not None:
             self.api_token_bucket = api_token_bucket
         else:
