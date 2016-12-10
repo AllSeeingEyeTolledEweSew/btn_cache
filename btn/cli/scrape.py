@@ -13,21 +13,22 @@ def log():
 
 class Scraper(object):
 
-    LIMIT = 1000
-
     def __init__(self, api):
         self.api = api
 
-    def get_last_id_from_feed(self):
+    def get_feed_ids(self):
         user = self.api.userInfo()
         resp = self.api.get(
             "/feeds.php", feed="torrents_all", user=user.id,
             auth=self.api.auth, passkey=self.api.passkey,
             authkey=self.api.authkey)
         feed = feedparser.parse(resp.text)
-        link = feed.entries[0].link
-        return int(urllib_parse.parse_qs(
-            urllib_parse.urlparse(link).query)["id"][0])
+        ids = []
+        for entry in feed.entries:
+            link = entry.link
+            qd = urllib_parse.parse_qs(urllib_parse.urlparse(link).query)
+            ids.append(int(qd["id"][0]))
+        return ids
 
     @property
     def last_scraped_path(self):
@@ -48,47 +49,62 @@ class Scraper(object):
         with open(self.last_scraped_path, mode="w") as f:
             f.write(str(last_scraped))
 
+    def getTorrents(self, offset):
+        sr = self.api.getTorrents(results=2**31, offset=offset)
+        ids = [te.id for te in sr.torrents]
+        is_end = offset + len(ids) >= sr.results
+
+        if ids:
+            with self.api.db:
+                if offset == 0:
+                    self.api.db.execute(
+                        "delete from torrent_entry where id > ?",
+                        (ids[0],))
+                if is_end:
+                    self.api.db.execute(
+                        "delete from torrent_entry where id < ?",
+                        (ids[-1],))
+                for start in range(0, len(ids), 500):
+                    s = ids[start:start + 500]
+                    self.api.db.execute(
+                        "delete from torrent_entry where id < ? and "
+                        "id > ? and id not in (%s)" %
+                        ",".join(["?"] * len(s)),
+                        tuple([s[0], s[-1]] + s))
+
+        return ids, is_end
+
     def scrape(self):
         offset = 0
         oldest_scraped_in_run = None
 
-        init_last_id = self.get_last_id_from_feed()
-        if init_last_id == self.get_last_scraped():
+        feed_ids = self.get_feed_ids()
+        c = self.api.db.execute(
+            "select id from torrent_entry order by id desc limit ?",
+            (len(feed_ids),))
+        db_ids = [row["id"] for row in c]
+
+        if feed_ids == db_ids and feed_ids[0] == self.get_last_scraped():
             log().debug("Feed has not updated.")
+            return
+
+        if feed_ids[1:] == db_ids[:len(feed_ids) - 1]:
+            if self.api.getTorrentById(feed_ids[0]):
+                self.set_last_scraped(feed_ids[0])
             return
 
         newest = 0
         while True:
             log().debug("Scraping metadata at offset %s", offset)
-            limit = self.LIMIT
             
-            sr = self.api.getTorrents(results=limit, offset=offset)
-            ids = [te.id for te in sr.torrents]
-
-            if ids:
-                with self.api.db:
-                    if offset == 0:
-                        self.api.db.execute(
-                            "delete from torrent_entry where id > ?",
-                            (ids[0],))
-                    if len(ids) < limit:
-                        self.api.db.execute(
-                            "delete from torrent_entry where id < ?",
-                            (ids[-1],))
-                    for start in range(0, len(ids), 500):
-                        s = ids[start:start + 500]
-                        self.api.db.execute(
-                            "delete from torrent_entry where id < ? and "
-                            "id > ? and id not in (%s)" %
-                            ",".join(["?"] * len(s)),
-                            tuple([s[0], s[-1]] + s))
+            ids, is_end = self.getTorrents(offset)
 
             if ids and ids[0] > newest:
                 newest = ids[0]
 
             if oldest_scraped_in_run is None or (
                     ids and ids[0] >= oldest_scraped_in_run):
-                if len(ids) < limit:
+                if is_end:
                     log().debug("We reached the earliest torrent entry.")
                     break
                 if ids[-1] <= (self.get_last_scraped() or 0):
@@ -100,14 +116,14 @@ class Scraper(object):
                 offset += len(ids) - 1
             else:
                 log().debug("Missed overlap, backing off.")
-                offset -= limit // 2
+                offset -= len(ids) // 2
                 if offset <= 0:
                     offset = 0
                     oldest_scraped_in_run = None
 
         # torrent entry index seems to be updated asynchronously from the feed.
-        if newest < init_last_id:
-            for id in range(newest + 1, init_last_id + 1):
+        if newest < feed_ids[0]:
+            for id in range(newest + 1, feed_ids[0] + 1):
                 if self.api.getTorrentById(id):
                     newest = id
 
