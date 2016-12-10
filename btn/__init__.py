@@ -549,8 +549,8 @@ class API(object):
     API_HOST = "api.btnapps.net"
     API_PATH = "/"
 
-    DEFAULT_TOKEN_RATE = 2
-    DEFAULT_TOKEN_PERIOD = 10
+    DEFAULT_TOKEN_RATE = 20
+    DEFAULT_TOKEN_PERIOD = 100
 
     DEFAULT_API_TOKEN_RATE = 150
     DEFAULT_API_TOKEN_PERIOD = 3600
@@ -561,7 +561,7 @@ class API(object):
 
     def __init__(self, key=None, passkey=None, authkey=None,
                  api_token_bucket=None, token_bucket=None, cache_path=None,
-                 store_raw_torrent=None):
+                 store_raw_torrent=None, auth=None):
         if cache_path is None:
             cache_path = os.path.expanduser("~/.cache/btn")
 
@@ -574,6 +574,7 @@ class API(object):
                 config = {}
 
         self.key = config.get("key")
+        self.auth = config.get("auth")
         self.passkey = config.get("passkey")
         self.authkey = config.get("authkey")
         self.token_rate = config.get("token_rate")
@@ -584,6 +585,8 @@ class API(object):
 
         if key is not None:
             self.key = key
+        if auth is not None:
+            self.auth = auth
         if passkey is not None:
             self.passkey = passkey
         if authkey is not None:
