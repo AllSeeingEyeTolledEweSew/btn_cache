@@ -388,8 +388,7 @@ class TorrentEntry(object):
 
     @property
     def raw_torrent_path(self):
-        name = "%s.torrent" % self.id
-        return os.path.join(self.api.cache_path, "torrents", name)
+        return os.path.join(self.api.cache_path, "torrents", str(self.id))
 
     @property
     def raw_torrent(self):
@@ -563,7 +562,7 @@ class API(object):
                  api_token_bucket=None, token_bucket=None, cache_path=None,
                  store_raw_torrent=None, auth=None):
         if cache_path is None:
-            cache_path = os.path.expanduser("~/.cache/btn")
+            cache_path = os.path.expanduser("~/.btn")
 
         self.cache_path = cache_path
 
