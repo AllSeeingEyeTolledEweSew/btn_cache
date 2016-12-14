@@ -56,11 +56,11 @@ class Scraper(object):
 
         if ids:
             with self.api.db:
-                if offset == 0:
+                if offset == 0 and ids:
                     self.api.db.execute(
                         "delete from torrent_entry where id > ?",
                         (ids[0],))
-                if is_end:
+                if is_end and ids:
                     self.api.db.execute(
                         "delete from torrent_entry where id < ?",
                         (ids[-1],))
