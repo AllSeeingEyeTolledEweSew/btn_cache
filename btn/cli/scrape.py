@@ -85,10 +85,11 @@ class Scraper(object):
         db_ids = [row["id"] for row in c]
 
         if feed_ids == db_ids and feed_ids[0] == self.get_last_scraped():
-            log().debug("Feed has not updated.")
+            log().debug("Feed has no changes.")
             return
 
         if feed_ids[1:] == db_ids[:len(feed_ids) - 1]:
+            log().debug("Only one torrent added.")
             if self.api.getTorrentById(feed_ids[0]):
                 self.set_last_scraped(feed_ids[0])
             return
@@ -105,17 +106,17 @@ class Scraper(object):
             if oldest_scraped_in_run is None or (
                     ids and ids[0] >= oldest_scraped_in_run):
                 if is_end:
-                    log().debug("We reached the earliest torrent entry.")
+                    log().debug("We reached the oldest torrent entry.")
                     break
                 if ids[-1] <= (self.get_last_scraped() or 0):
-                    log().debug("We reached where we were before.")
+                    log().debug("Caught up.")
                     break
                 if oldest_scraped_in_run is None or (
                         ids[-1] < oldest_scraped_in_run):
                     oldest_scraped_in_run = ids[-1]
                 offset += len(ids) - 1
             else:
-                log().debug("Missed overlap, backing off.")
+                log().debug("Missed page overlap, backing off.")
                 offset -= len(ids) // 2
                 if offset <= 0:
                     offset = 0
@@ -123,6 +124,9 @@ class Scraper(object):
 
         # torrent entry index seems to be updated asynchronously from the feed.
         if newest < feed_ids[0]:
+            log().debug(
+                "The first page of results was missing some entries from the "
+                "feed. Caching them individually.")
             for id in range(newest + 1, feed_ids[0] + 1):
                 if self.api.getTorrentById(id):
                     newest = id
