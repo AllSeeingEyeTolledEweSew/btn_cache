@@ -56,21 +56,24 @@ class Scraper(object):
 
         if ids:
             with self.api.db:
-                if offset == 0 and ids:
+                if offset == 0:
                     self.api.db.execute(
                         "delete from torrent_entry where id > ?",
                         (ids[0],))
-                if is_end and ids:
+                if is_end:
                     self.api.db.execute(
                         "delete from torrent_entry where id < ?",
                         (ids[-1],))
-                for start in range(0, len(ids), 500):
-                    s = ids[start:start + 500]
-                    self.api.db.execute(
-                        "delete from torrent_entry where id < ? and "
-                        "id > ? and id not in (%s)" %
-                        ",".join(["?"] * len(s)),
-                        tuple([s[0], s[-1]] + s))
+                self.api.db.execute(
+                    "create temp table ids (id integer not null primary key)")
+                self.api.db.executemany(
+                    "insert into temp.ids (id) values (?)",
+                    [(id,) for id in ids])
+                self.api.db.execute(
+                    "delete from torrent_entry where id < ? and id > ? and "
+                    "id not in (select id from temp.ids)",
+                    (ids[0], ids[-1]))
+                self.api.db.execute("drop table temp.ids")
 
         return ids, is_end
 
