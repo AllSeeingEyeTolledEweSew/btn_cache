@@ -752,11 +752,12 @@ class API(object):
         sr_json = self.getTorrentsJson(
             results=results, offset=offset, **kwargs)
         tes = []
+        for tj in sr_json.get("torrents", {}).values():
+            te = self._torrent_entry_from_json(tj)
+            tes.append(te)
         with self.db:
-            for tj in sr_json.get("torrents", {}).values():
-                te = self._torrent_entry_from_json(tj)
+            for te in tes:
                 te.serialize()
-                tes.append(te)
         tes= sorted(tes, key=lambda te: -te.id)
         return SearchResult(sr_json["results"], tes)
 
