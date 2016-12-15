@@ -554,10 +554,6 @@ class API(object):
     DEFAULT_API_TOKEN_RATE = 150
     DEFAULT_API_TOKEN_PERIOD = 3600
 
-    CACHE_FIRST = "first"
-    CACHE_BYPASS = "bypass"
-    CACHE_ONLY = "only"
-
     def __init__(self, key=None, passkey=None, authkey=None,
                  api_token_bucket=None, token_bucket=None, cache_path=None,
                  store_raw_torrent=None, auth=None):
@@ -738,17 +734,90 @@ class API(object):
             size=int(tj["Size"]), snatched=int(tj["Snatched"]),
             source=tj["Source"], time=int(tj["Time"]))
 
-    def getTorrents(self, cache=None, results=10, offset=0, **kwargs):
-        if cache == self.CACHE_ONLY:
-            assert offset == 0, offset
-            assert results >= 1, results
-            assert tuple(kwargs.keys()) == ("hash",), kwargs
-            row = self.db.execute(
-                "select id from torrent_entry where info_hash = ?",
-                (kwargs["hash"],)).fetchone()
-            if row:
-                return SearchResult(1, [self._from_db(row[0])])
-            return SearchResult(0, [])
+    def getTorrentsCached(self, results=None, offset=None, **kwargs):
+        params = []
+        if "id" in kwargs:
+            params.append(("torrent_entry.id = ?", kwargs["id"]))
+        if "series" in kwargs:
+            params.append(("series.name = ?", kwargs["series"]))
+        if "category" in kwargs:
+            params.append(("category.name = ?", kwargs["category"]))
+        if "name" in kwargs:
+            params.append(("torrent_entry_group.name = ?", kwargs["name"]))
+        if "codec" in kwargs:
+            params.append(("codec.name = ?", kwargs["codec"]))
+        if "container" in kwargs:
+            params.append(("container.name = ?", kwargs["container"]))
+        if "source" in kwargs:
+            params.append(("source.name = ?", kwargs["source"]))
+        if "resolution" in kwargs:
+            params.append(("resolution.name = ?", kwargs["resolution"]))
+        if "origin" in kwargs:
+            params.append(("origin.name = ?", kwargs["origin"]))
+        if "hash" in kwargs:
+            params.append(("torrent_entry.info_hash = ?", kwargs["hash"]))
+        if "tvdb" in kwargs:
+            params.append(("series.tvdb_id = ?", kwargs["tvdb"]))
+        if "tvrage" in kwargs:
+            params.append(("series.tvrage_id = ?", kwargs["tvrage"]))
+        if "time" in kwargs:
+            params.append(("torrent_entry.time = ?", kwargs["time"]))
+        if "age" in kwargs:
+            params.append(
+                ("torrent_entry.time = ?", time.time() - kwargs["age"]))
+
+        if params:
+            constraint = " and ".join(c for c, _ in params)
+            constraint_clause = "where %s" % constraint
+        else:
+            constraint_clause = ""
+
+        values = [v for _, v in params]
+
+        query_base  = (
+            "select %s "
+            "from torrent_entry "
+            "inner join torrent_entry_group on "
+            "torrent_entry.group_id = torrent_entry_group.id "
+            "inner join series on "
+            "torrent_entry_group.series_id = series.id "
+            "inner join category on "
+            "torrent_entry_group.category_id = category.id "
+            "inner join codec on "
+            "torrent_entry.codec_id = codec.id "
+            "inner join container on "
+            "torrent_entry.container_id = container.id "
+            "inner join source on "
+            "torrent_entry.source_id = source.id "
+            "inner join resolution on "
+            "torrent_entry.resolution_id = resolution.id "
+            "inner join origin on "
+            "torrent_entry.origin_id = origin.id "
+            "%s "
+            "order by torrent_entry.id desc %s %s")
+
+        total = self.db.execute(
+            query_base % ("count(*)", constraint_clause, "", ""),
+            values).fetchone()[0]
+
+        if results is not None:
+            limit_clause = "limit ?"
+            values.append(results)
+        else:
+            limit_clause = ""
+        if offset is not None:
+            offset_clause = "offset ?"
+            values.append(offset)
+        else:
+            offset_clause = ""
+
+        query = query_base % (
+            "torrent_entry.id", constraint_clause, limit_clause, offset_clause)
+
+        c = self.db.execute(query, values)
+        return [self._from_db(r[0]) for r in c]
+
+    def getTorrents(self, results=10, offset=0, **kwargs):
         sr_json = self.getTorrentsJson(
             results=results, offset=offset, **kwargs)
         tes = []
@@ -774,15 +843,10 @@ class API(object):
     def getTorrentByIdJson(self, id):
         return self.call_api("getTorrentById", id)
 
-    def getTorrentById(self, id, cache=None):
-        if cache is None:
-            cache = self.CACHE_FIRST
-        if cache in (self.CACHE_FIRST, self.CACHE_ONLY):
-            te = self._from_db(id)
-            if te:
-                return te
-            if cache == self.CACHE_ONLY:
-                return None
+    def getTorrentByIdCached(self, id):
+        return self._from_db(id)
+
+    def getTorrentById(self, id):
         tj = self.getTorrentByIdJson(id)
         te = self._torrent_entry_from_json(tj) if tj else None
         if te:
@@ -808,15 +872,10 @@ class API(object):
     def userInfoJson(self):
         return self.call_api("userInfo")
 
-    def userInfo(self, cache=None):
-        if cache is None:
-            cache = self.CACHE_FIRST
-        if cache in (self.CACHE_FIRST, self.CACHE_ONLY):
-            ui = UserInfo._from_db(self)
-            if ui:
-                return ui
-            if cache == self.CACHE_ONLY:
-                return None
+    def userInfoCached(self):
+        return UserInfo._from_db(self)
+
+    def userInfo(self):
         uj = self.userInfoJson()
         ui = self._user_info_from_json(uj) if uj else None
         if ui:
