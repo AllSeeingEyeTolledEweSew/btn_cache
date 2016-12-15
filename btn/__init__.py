@@ -796,10 +796,6 @@ class API(object):
             "%s "
             "order by torrent_entry.id desc %s %s")
 
-        total = self.db.execute(
-            query_base % ("count(*)", constraint_clause, "", ""),
-            values).fetchone()[0]
-
         if results is not None:
             limit_clause = "limit ?"
             values.append(results)
