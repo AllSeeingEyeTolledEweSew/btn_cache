@@ -17,7 +17,9 @@ class Scraper(object):
         self.api = api
 
     def get_feed_ids(self):
-        user = self.api.userInfo()
+        user = self.api.userInfoCached()
+        if not user:
+            user = self.api.userInfo()
         resp = self.api.get(
             "/feeds.php", feed="torrents_all", user=user.id,
             auth=self.api.auth, passkey=self.api.passkey,
