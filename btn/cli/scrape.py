@@ -70,13 +70,15 @@ class Scraper(object):
         if ids:
             with self.api.db:
                 changestamp = self.api.get_changestamp()
-                if offset == 0 and last_scraped_at is None:
+                if offset == 0 and last_scraped_min is None:
                     self.api.db.execute(
-                        "update torrent_entry set deleted_at = ? where id > ?",
+                        "update torrent_entry set deleted_at = ? where id > ? "
+                        "and deleted_at is null",
                         (changestamp, ids[0],))
                 if is_end:
                     self.api.db.execute(
-                        "update torrent_entry set deleted_at = ? where id < ?",
+                        "update torrent_entry set deleted_at = ? where id < ? "
+                        "and deleted_at is null",
                         (changestamp, ids[-1],))
                 self.api.db.execute(
                     "create temp table ids (id integer not null primary key)")
@@ -85,7 +87,7 @@ class Scraper(object):
                     [(id,) for id in ids])
                 self.api.db.execute(
                     "update torrent_entry set deleted_at = ? "
-                    "where id < ? and id > ? and "
+                    "where deleted_at is null and id < ? and id > ? and "
                     "id not in (select id from temp.ids)",
                     (changestamp, ids[0], ids[-1]))
                 self.api.db.execute("drop table temp.ids")
