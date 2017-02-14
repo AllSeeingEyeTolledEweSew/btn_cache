@@ -45,15 +45,32 @@ class Scraper(object):
     def set_last_scraped(self, last_scraped):
         self.api.set_global("last_scraped", str(last_scraped))
 
-    def getTorrents(self, offset):
-        sr = self.api.getTorrents(results=2**31, offset=offset)
+    def get_last_scraped_min(self):
+        try:
+            return int(self.api.get_global("last_scraped_min") or 0) or None
+        except ValueError:
+            return None
+
+    def set_last_scraped_min(self, last_scraped_min):
+        if last_scraped_min is None:
+            self.api.delete_global("last_scraped_min")
+        else:
+            self.api.set_global("last_scraped_min", last_scraped_min)
+
+    def getTorrents(self, offset, last_scraped_min=None):
+        kwargs = {
+            "results": 2**31,
+            "offset": offset}
+        if last_scraped_min is not None:
+            kwargs["id"] = "<=%d" % last_scraped_min
+        sr = self.api.getTorrents(**kwargs)
         ids = [te.id for te in sr.torrents]
         is_end = offset + len(ids) >= sr.results
 
         if ids:
             with self.api.db:
                 changestamp = self.api.get_changestamp()
-                if offset == 0:
+                if offset == 0 and last_scraped_at is None:
                     self.api.db.execute(
                         "update torrent_entry set deleted_at = ? where id > ?",
                         (changestamp, ids[0],))
@@ -72,6 +89,10 @@ class Scraper(object):
                     "id not in (select id from temp.ids)",
                     (changestamp, ids[0], ids[-1]))
                 self.api.db.execute("drop table temp.ids")
+                self.set_last_scraped_min(min(ids))
+        elif is_end:
+            with self.api.db:
+                self.set_last_scraped_min(None)
 
         return ids, is_end
 
@@ -91,6 +112,8 @@ class Scraper(object):
                 log().debug("Feed has no changes.")
                 return
 
+            last_scraped_min = self.get_last_scraped_min()
+
         if feed_ids[1:] == db_ids[:len(feed_ids) - 1]:
             log().debug("Only one torrent added.")
             if self.api.getTorrentById(feed_ids[0]):
@@ -102,7 +125,8 @@ class Scraper(object):
         while True:
             log().debug("Scraping metadata at offset %s", offset)
             
-            ids, is_end = self.getTorrents(offset)
+            ids, is_end = self.getTorrents(
+                offset, last_scraped_min=last_scraped_min)
 
             if ids and ids[0] > newest:
                 newest = ids[0]

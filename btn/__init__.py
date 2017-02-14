@@ -805,6 +805,9 @@ class API(object):
             "insert or replace into global (name, value) values (?, ?)",
             (name, value))
 
+    def delete_global(self, name):
+        self.db.execute("delete from global where name = ?", (name,))
+
     def get_changestamp(self):
         try:
             changestamp = int(self.get_global("changestamp") or 0)
