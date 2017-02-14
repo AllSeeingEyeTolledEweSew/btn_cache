@@ -37,19 +37,13 @@ class Scraper(object):
         return os.path.join(self.api.cache_path, "last_scraped")
 
     def get_last_scraped(self):
-        if os.path.exists(self.last_scraped_path):
-            with open(self.last_scraped_path) as f:
-                s = f.read()
-            try:
-                return int(s)
-            except ValueError:
-                return None
-        else:
-            return None
+        try:
+            return int(self.api.get_global("last_scraped") or 0)
+        except ValueError:
+            return 0
 
     def set_last_scraped(self, last_scraped):
-        with open(self.last_scraped_path, mode="w") as f:
-            f.write(str(last_scraped))
+        self.api.set_global("last_scraped", str(last_scraped))
 
     def getTorrents(self, offset):
         sr = self.api.getTorrents(results=2**31, offset=offset)
@@ -58,23 +52,25 @@ class Scraper(object):
 
         if ids:
             with self.api.db:
+                changestamp = self.api.get_changestamp()
                 if offset == 0:
                     self.api.db.execute(
-                        "delete from torrent_entry where id > ?",
-                        (ids[0],))
+                        "update torrent_entry set deleted_at = ? where id > ?",
+                        (changestamp, ids[0],))
                 if is_end:
                     self.api.db.execute(
-                        "delete from torrent_entry where id < ?",
-                        (ids[-1],))
+                        "update torrent_entry set deleted_at = ? where id < ?",
+                        (changestamp, ids[-1],))
                 self.api.db.execute(
                     "create temp table ids (id integer not null primary key)")
                 self.api.db.executemany(
                     "insert into temp.ids (id) values (?)",
                     [(id,) for id in ids])
                 self.api.db.execute(
-                    "delete from torrent_entry where id < ? and id > ? and "
+                    "update torrent_entry set deleted_at = ? "
+                    "where id < ? and id > ? and "
                     "id not in (select id from temp.ids)",
-                    (ids[0], ids[-1]))
+                    (changestamp, ids[0], ids[-1]))
                 self.api.db.execute("drop table temp.ids")
 
         return ids, is_end
@@ -84,19 +80,22 @@ class Scraper(object):
         oldest_scraped_in_run = None
 
         feed_ids = self.get_feed_ids()
-        c = self.api.db.execute(
-            "select id from torrent_entry order by id desc limit ?",
-            (len(feed_ids),))
-        db_ids = [row["id"] for row in c]
+        with self.api.db:
+            c = self.api.db.execute(
+                "select id from torrent_entry where deleted_at is null "
+                "order by id desc limit ?",
+                (len(feed_ids),))
+            db_ids = [row["id"] for row in c]
 
-        if feed_ids == db_ids and feed_ids[0] == self.get_last_scraped():
-            log().debug("Feed has no changes.")
-            return
+            if feed_ids == db_ids and feed_ids[0] == self.get_last_scraped():
+                log().debug("Feed has no changes.")
+                return
 
         if feed_ids[1:] == db_ids[:len(feed_ids) - 1]:
             log().debug("Only one torrent added.")
             if self.api.getTorrentById(feed_ids[0]):
-                self.set_last_scraped(feed_ids[0])
+                with self.api.db:
+                    self.set_last_scraped(feed_ids[0])
             return
 
         newest = 0
@@ -113,7 +112,7 @@ class Scraper(object):
                 if is_end:
                     log().debug("We reached the oldest torrent entry.")
                     break
-                if ids[-1] <= (self.get_last_scraped() or 0):
+                if ids[-1] <= self.get_last_scraped():
                     log().debug("Caught up.")
                     break
                 if oldest_scraped_in_run is None or (
@@ -136,8 +135,9 @@ class Scraper(object):
                 if self.api.getTorrentById(id):
                     newest = id
 
-        if newest > self.get_last_scraped():
-            self.set_last_scraped(newest)
+        with self.api.db:
+            if newest > self.get_last_scraped():
+                self.set_last_scraped(newest)
 
         return newest
 

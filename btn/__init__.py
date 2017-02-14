@@ -48,7 +48,19 @@ class Series(object):
             "  poster text,"
             "  tvdb_id integer,"
             "  tvrage_id integer,"
-            "  youtube_trailer text)")
+            "  youtube_trailer text,"
+            "  created_at integer not null,"
+            "  modified_at integer not null,"
+            "  deleted_at integer)")
+        api.db.execute(
+            "create index if not exists series_created_at "
+            "on series (created_at)")
+        api.db.execute(
+            "create index if not exists series_modified_at "
+            "on series (modified_at)")
+        api.db.execute(
+            "create index if not exists series_deleted_at "
+            "on series (deleted_at)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -56,6 +68,9 @@ class Series(object):
             "select * from series where id = ?", (id,)).fetchone()
         if not row:
             return None
+        row = dict(row)
+        for k in ("created_at", "modified_at", "deleted_at"):
+            del row[k]
         return cls(api, **row)
 
     def __init__(self, api, id=None, imdb_id=None, name=None, banner=None,
@@ -70,13 +85,23 @@ class Series(object):
         self.tvrage_id = tvrage_id
         self.youtube_trailer = youtube_trailer
 
-    def serialize(self):
+    def serialize(self, changestamp=None):
+        if changestamp is None:
+            changestamp = self.api.get_changestamp()
         self.api.db.execute(
             "insert or replace into series "
-            "(id, imdb_id, name, banner, poster, tvdb_id, tvrage_id, "
+            "(id, "
+            " created_at, modified_at, deleted_at, "
+            " imdb_id, name, banner, poster, tvdb_id, tvrage_id, "
             " youtube_trailer) "
             "values "
             "(?,"
+            "coalesce(case when "
+            "(select created_at <= deleted_at from series where id = ?) "
+            "then ? else null end,"
+            "(select created_at from series where id = ?),?),"
+            "?,"
+            "null,"
             "coalesce(?,(select imdb_id from series where id = ?)),"
             "coalesce(?,(select name from series where id = ?)),"
             "coalesce(?,(select banner from series where id = ?)),"
@@ -85,6 +110,8 @@ class Series(object):
             "coalesce(?,(select tvrage_id from series where id = ?)),"
             "coalesce(?,(select youtube_trailer from series where id = ?)))",
             (self.id,
+             self.id, changestamp, self.id, changestamp,
+             changestamp,
              self.imdb_id, self.id,
              self.name, self.id,
              self.banner, self.id,
@@ -106,7 +133,19 @@ class Group(object):
             "  id integer primary key,"
             "  category_id integer not null,"
             "  name text not null,"
-            "  series_id integer not null)")
+            "  series_id integer not null,"
+            "  created_at integer not null,"
+            "  modified_at integer not null,"
+            "  deleted_at integer)")
+        api.db.execute(
+            "create index if not exists torrent_entry_group_created_at "
+            "on torrent_entry_group (created_at)")
+        api.db.execute(
+            "create index if not exists torrent_entry_group_modified_at  "
+            "on torrent_entry_group (modified_at)")
+        api.db.execute(
+            "create index if not exists torrent_entry_group_deleted_at  "
+            "on torrent_entry_group (deleted_at)")
         api.db.execute(
             "create table if not exists category ("
             "  id integer primary key,"
@@ -142,19 +181,34 @@ class Group(object):
         self.name = name
         self.series = series
 
-    def serialize(self):
+    def serialize(self, changestamp=None):
+        if changestamp is None:
+            changestamp = self.api.get_changestamp()
         self.api.db.execute(
             "insert or ignore into category (name) values (?)",
             (self.category,))
         category_id = self.api.db.execute(
             "select id from category where name = ?",
             (self.category,)).fetchone()[0]
-        self.series.serialize()
+        self.series.serialize(changestamp=changestamp)
         self.api.db.execute(
             "insert or replace into torrent_entry_group "
-            "(id, category_id, name, series_id) values "
-            "(?, ?, ?, ?)",
-            (self.id, category_id, self.name, self.series.id))
+            "(id,"
+            "created_at, modified_at, deleted_at, "
+            "category_id, name, series_id) values "
+            "(?,"
+            "coalesce("
+            "case when "
+            "(select created_at <= deleted_at from torrent_entry_group "
+            "where id = ?) then ? else null end,"
+            "(select created_at from torrent_entry_group where id = ?),?),"
+            "?,"
+            "null,"
+            "?, ?, ?)",
+            (self.id,
+             self.id, changestamp, self.id, changestamp,
+             changestamp,
+             category_id, self.name, self.series.id))
 
     def __repr__(self):
         return "<Group %s \"%s\" \"%s\">" % (
@@ -193,7 +247,19 @@ class TorrentEntry(object):
             "  size integer not null,"
             "  snatched integer not null,"
             "  source_id integer not null,"
-            "  time integer not null)")
+            "  time integer not null,"
+            "  created_at integer not null,"
+            "  modified_at integer not null,"
+            "  deleted_at integer)")
+        api.db.execute(
+            "create index if not exists torrent_entry_created_at "
+            "on torrent_entry (created_at)")
+        api.db.execute(
+            "create index if not exists torrent_entry_modified_at "
+            "on torrent_entry (modified_at)")
+        api.db.execute(
+            "create index if not exists torrent_entry_deleted_at "
+            "on torrent_entry (deleted_at)")
         api.db.execute(
             "create table if not exists codec ("
             "  id integer primary key,"
@@ -286,7 +352,7 @@ class TorrentEntry(object):
         self._lock = threading.RLock()
         self._raw_torrent = None
 
-    def serialize(self):
+    def serialize(self, changestamp=None):
         if self.codec is not None:
             self.api.db.execute(
                 "insert or ignore into codec (name) values (?)", (self.codec,))
@@ -331,10 +397,15 @@ class TorrentEntry(object):
                 (self.source,)).fetchone()[0]
         else:
             source_id = None
-        self.group.serialize()
+        if changestamp is None:
+            changestamp = self.api.get_changestamp()
+        self.group.serialize(changestamp=changestamp)
         self.api.db.execute(
             "insert or replace into torrent_entry ("
             "id,"
+            "created_at,"
+            "modified_at,"
+            "deleted_at,"
             "codec_id,"
             "container_id,"
             "group_id,"
@@ -350,6 +421,12 @@ class TorrentEntry(object):
             "time"
             ") values ("
             "?,"
+            "coalesce(case when "
+            "(select created_at <= deleted_at from torrent_entry where id = ?) "
+            "then ? else null end,"
+            "(select created_at from torrent_entry where id = ?),?),"
+            "?,"
+            "null,"
             "coalesce(?,(select codec_id from torrent_entry where id = ?)),"
             "coalesce(?,(select container_id from torrent_entry where id = ?)),"
             "coalesce(?,(select group_id from torrent_entry where id = ?)),"
@@ -365,6 +442,8 @@ class TorrentEntry(object):
             "coalesce(?,(select time from torrent_entry where id = ?))"
             ")",
             (self.id,
+             self.id, changestamp, self.id, changestamp,
+             changestamp,
              codec_id, self.id,
              container_id, self.id,
              self.group.id, self.id,
@@ -643,6 +722,13 @@ class API(object):
             Group._create_schema(self)
             TorrentEntry._create_schema(self)
             UserInfo._create_schema(self)
+            db.execute(
+                "create table if not exists global ("
+                "  name text not null,"
+                "  value text not null)")
+            db.execute(
+                "create unique index if not exists global_name "
+                "on global (name)")
         return db
 
     def mk_url(self, host, path, **qdict):
@@ -709,6 +795,25 @@ class API(object):
 
         return response["result"]
 
+    def get_global(self, name):
+        row = self.db.execute(
+            "select value from global where name = ?", (name,)).fetchone()
+        return row[0] if row else None
+
+    def set_global(self, name, value):
+        self.db.execute(
+            "insert or replace into global (name, value) values (?, ?)",
+            (name, value))
+
+    def get_changestamp(self):
+        try:
+            changestamp = int(self.get_global("changestamp") or 0)
+        except ValueError:
+            changestamp = 0
+        changestamp += 1
+        self.set_global("changestamp", changestamp)
+        return changestamp
+
     def _from_db(self, id):
         return TorrentEntry._from_db(self, id)
 
@@ -766,11 +871,10 @@ class API(object):
             params.append(
                 ("torrent_entry.time = ?", time.time() - kwargs["age"]))
 
-        if params:
-            constraint = " and ".join(c for c, _ in params)
-            constraint_clause = "where %s" % constraint
-        else:
-            constraint_clause = ""
+        params.append(("deleted_at is ?", "null"))
+
+        constraint = " and ".join(c for c, _ in params)
+        constraint_clause = "where %s" % constraint
 
         values = [v for _, v in params]
 
@@ -821,8 +925,9 @@ class API(object):
             te = self._torrent_entry_from_json(tj)
             tes.append(te)
         with self.db:
+            changestamp = self.get_changestamp()
             for te in tes:
-                te.serialize()
+                te.serialize(changestamp=changestamp)
         tes= sorted(tes, key=lambda te: -te.id)
         return SearchResult(sr_json["results"], tes)
 
