@@ -32,140 +32,113 @@ class Scraper(object):
             ids.append(int(qd["id"][0]))
         return ids
 
-    @property
-    def last_scraped_path(self):
-        return os.path.join(self.api.cache_path, "last_scraped")
-
-    def get_last_scraped(self):
+    def get_int(self, key):
+        value = self.api.get_global(key)
         try:
-            return int(self.api.get_global("last_scraped") or 0)
-        except ValueError:
-            return 0
-
-    def set_last_scraped(self, last_scraped):
-        self.api.set_global("last_scraped", str(last_scraped))
-
-    def get_last_scraped_min(self):
-        try:
-            return int(self.api.get_global("last_scraped_min") or 0) or None
-        except ValueError:
+            return int(self.api.get_global(key))
+        except (ValueError, TypeError):
             return None
 
-    def set_last_scraped_min(self, last_scraped_min):
-        if last_scraped_min is None:
-            self.api.delete_global("last_scraped_min")
+    def set_int(self, key, value):
+        if value is None:
+            self.api.delete_global(key)
         else:
-            self.api.set_global("last_scraped_min", last_scraped_min)
+            self.api.set_global(key, str(value))
 
-    def getTorrents(self, offset, last_scraped_min=None):
-        kwargs = {
-            "results": 2**31,
-            "offset": offset}
-        if last_scraped_min is not None:
-            kwargs["id"] = "<=%d" % last_scraped_min
-        sr = self.api.getTorrents(**kwargs)
+    def update_scrape_results_unlocked(self, offset, sr):
+        done = False
         ids = [te.id for te in sr.torrents]
         is_end = offset + len(ids) >= sr.results
 
         if ids:
-            with self.api.db:
-                changestamp = self.api.get_changestamp()
-                if offset == 0 and last_scraped_min is None:
-                    self.api.db.execute(
-                        "update torrent_entry set deleted_at = ? where id > ? "
-                        "and deleted_at is null",
-                        (changestamp, ids[0],))
-                if is_end:
-                    self.api.db.execute(
-                        "update torrent_entry set deleted_at = ? where id < ? "
-                        "and deleted_at is null",
-                        (changestamp, ids[-1],))
+            changestamp = self.api.get_changestamp()
+            if is_end:
                 self.api.db.execute(
-                    "create temp table ids (id integer not null primary key)")
-                self.api.db.executemany(
-                    "insert into temp.ids (id) values (?)",
-                    [(id,) for id in ids])
-                self.api.db.execute(
-                    "update torrent_entry set deleted_at = ? "
-                    "where deleted_at is null and id < ? and id > ? and "
-                    "id not in (select id from temp.ids)",
-                    (changestamp, ids[0], ids[-1]))
-                self.api.db.execute("drop table temp.ids")
-                self.set_last_scraped_min(min(ids))
-        elif is_end:
-            with self.api.db:
-                self.set_last_scraped_min(None)
+                    "update torrent_entry set deleted_at = ? where id < ? "
+                    "and deleted_at is null",
+                    (changestamp, ids[-1]))
+            self.api.db.execute(
+                "create temp table ids (id integer not null primary key)")
+            self.api.db.executemany(
+                "insert into temp.ids (id) values (?)",
+                [(id,) for id in ids])
+            self.api.db.execute(
+                "update torrent_entry set deleted_at = ? "
+                "where deleted_at is null and id < ? and id > ? and "
+                "id not in (select id from temp.ids)",
+                (changestamp, ids[0], ids[-1]))
+            self.api.db.execute("drop table temp.ids")
 
-        return ids, is_end
+        last_scraped = self.get_int("last_scraped")
+        oldest = self.get_int("scrape_oldest")
+        newest = self.get_int("scrape_newest")
+
+        if newest is None or (ids and ids[0] >= newest):
+            newest = ids[0]
+
+        # Ensure we got a good page overlap.
+        if oldest is None or (ids and ids[0] >= oldest):
+            if is_end:
+                log().debug("We reached the oldest torrent entry.")
+                done = True
+            elif last_scraped is not None and ids[-1] <= last_scraped:
+                log().debug("Caught up. Current as of %s.", newest)
+                done = True
+            elif oldest is None or ids[-1] < oldest:
+                oldest = ids[-1]
+            offset += len(ids) - 1
+        else:
+            log().debug("Missed page overlap, backing off.")
+            offset -= len(ids) // 2
+            if offset <= 0:
+                offset = 0
+                oldest = None
+
+        if done:
+            self.set_int("last_scraped", newest)
+            self.set_int("scrape_offset", None)
+            self.set_int("scrape_oldest", None)
+            self.set_int("scrape_newest", None)
+        else:
+            self.set_int("scrape_offset", offset)
+            self.set_int("scrape_oldest", oldest)
+            self.set_int("scrape_newest", newest)
+
+        return done
+
+    def scrape_step(self):
+        with self.api.db:
+            offset = self.get_int("scrape_offset")
+            last_scraped = self.get_int("last_scraped")
+            db_ids = []
+
+            if offset is None:
+                log().debug("No current scrape.")
+                c = self.api.db.execute(
+                    "select id from torrent_entry where deleted_at is null "
+                    "order by id desc")
+                db_ids = [row["id"] for row in c]
+
+        if offset is None:
+            feed_ids = self.get_feed_ids()
+            if feed_ids == db_ids[:len(feed_ids)] and (
+                    feed_ids[0] == last_scraped):
+                log().debug("Feed has no changes. Latest is %s.", last_scraped)
+                return True
+            offset = 0
+
+        log().debug("Scraping at offset %s", offset)
+
+        sr = self.api.getTorrents(results=2**31, offset=offset)
+
+        with self.api.db:
+            return self.update_scrape_results_unlocked(offset, sr)
 
     def scrape(self):
-        offset = 0
-        oldest_scraped_in_run = None
-
-        feed_ids = self.get_feed_ids()
-        with self.api.db:
-            c = self.api.db.execute(
-                "select id from torrent_entry where deleted_at is null "
-                "order by id desc limit ?",
-                (len(feed_ids),))
-            db_ids = [row["id"] for row in c]
-
-            if feed_ids == db_ids and feed_ids[0] == self.get_last_scraped():
-                log().debug("Feed has no changes.")
-                return
-
-            last_scraped_min = self.get_last_scraped_min()
-
-        if feed_ids[1:] == db_ids[:len(feed_ids) - 1]:
-            log().debug("Only one torrent added.")
-            if self.api.getTorrentById(feed_ids[0]):
-                with self.api.db:
-                    self.set_last_scraped(feed_ids[0])
-            return
-
-        newest = 0
         while True:
-            log().debug("Scraping metadata at offset %s", offset)
-            
-            ids, is_end = self.getTorrents(
-                offset, last_scraped_min=last_scraped_min)
-
-            if ids and ids[0] > newest:
-                newest = ids[0]
-
-            if oldest_scraped_in_run is None or (
-                    ids and ids[0] >= oldest_scraped_in_run):
-                if is_end:
-                    log().debug("We reached the oldest torrent entry.")
-                    break
-                if ids[-1] <= self.get_last_scraped():
-                    log().debug("Caught up.")
-                    break
-                if oldest_scraped_in_run is None or (
-                        ids[-1] < oldest_scraped_in_run):
-                    oldest_scraped_in_run = ids[-1]
-                offset += len(ids) - 1
-            else:
-                log().debug("Missed page overlap, backing off.")
-                offset -= len(ids) // 2
-                if offset <= 0:
-                    offset = 0
-                    oldest_scraped_in_run = None
-
-        # torrent entry index seems to be updated asynchronously from the feed.
-        if newest < feed_ids[0]:
-            log().debug(
-                "The first page of results was missing some entries from the "
-                "feed. Caching them individually.")
-            for id in range(newest + 1, feed_ids[0] + 1):
-                if self.api.getTorrentById(id):
-                    newest = id
-
-        with self.api.db:
-            if newest > self.get_last_scraped():
-                self.set_last_scraped(newest)
-
-        return newest
+            done = self.scrape_step()
+            if done:
+                break
 
 
 def main():
