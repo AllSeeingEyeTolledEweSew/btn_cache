@@ -604,6 +604,22 @@ class SearchResult(object):
         self.torrents = torrents or ()
 
 
+class CrudResult(object):
+
+    ACTION_CREATE = "create"
+    ACTION_UPDATE = "update"
+    ACTION_DELETE = "delete"
+
+    TYPE_TORRENT_ENTRY = "torrent_entry"
+    TYPE_GROUP = "group"
+    TYPE_SERIES = "series"
+
+    def __init__(self, type, action, id):
+        self.type = type
+        self.action = action
+        self.id = id
+
+
 class Error(Exception):
 
     pass
@@ -729,6 +745,7 @@ class API(object):
             db.execute(
                 "create unique index if not exists global_name "
                 "on global (name)")
+            db.execute("pragma journal_mode=wal")
         return db
 
     def mk_url(self, host, path, **qdict):
@@ -986,3 +1003,39 @@ class API(object):
             with self.db:
                 ui.serialize()
         return ui
+
+    def feed(self, type=None, timestamp=None):
+        if timestamp is None:
+            timestamp = 0
+
+        args = {
+            "create": CrudResult.ACTION_CREATE,
+            "delete": CrudResult.ACTION_DELETE,
+            "update": CrudResult.ACTION_UPDATE,
+            "ts": timestamp}
+
+        type_to_table = {
+            CrudResult.TYPE_TORRENT_ENTRY: "torrent_entry",
+            CrudResult.TYPE_GROUP: "torrent_entry_group",
+            CrudResult.TYPE_SERIES: "series"}
+
+        if type is None:
+            candidates = type_to_table.iteritems()
+        else:
+            candidates = (type, type_to_table[type])
+
+        for type, table in candidates:
+            c = self.db.execute(
+                "select "
+                "case when created_at > :ts then :create "
+                "when deleted_at > :ts then :delete "
+                "else :update end, "
+                "id "
+                "from %(table)s where "
+                "((created_at > :ts or modified_at > :ts) "
+                "and deleted_at is null) or "
+                "(created_at <= :ts and "
+                "(modified_at > :ts or deleted_at > :ts)) " % {"table": table},
+                args)
+            for action, id in c:
+                yield CrudResult(type, action, id)
