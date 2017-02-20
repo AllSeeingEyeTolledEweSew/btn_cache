@@ -17,6 +17,7 @@ setup(
     url="http://github.com/AllSeeingEyeTolledEweSew/btn",
     license="Unlicense",
     packages=find_packages(),
+    use_2to3=True,
     install_requires=[
         "better-bencode>=0.2.1",
         "PyYAML>=3.12",
