@@ -1022,7 +1022,7 @@ class API(object):
         if type is None:
             candidates = type_to_table.iteritems()
         else:
-            candidates = (type, type_to_table[type])
+            candidates = ((type, type_to_table[type]),)
 
         for type, table in candidates:
             c = self.db.execute(
