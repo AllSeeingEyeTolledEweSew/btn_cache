@@ -640,7 +640,7 @@ class API(object):
 
     HOST = "broadcasthe.net"
 
-    API_HOST = "api.btnapps.net"
+    API_HOST = "api.broadcasthe.net"
     API_PATH = "/"
 
     DEFAULT_TOKEN_RATE = 20
