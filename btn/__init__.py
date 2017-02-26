@@ -88,37 +88,36 @@ class Series(object):
     def serialize(self, changestamp=None):
         if changestamp is None:
             changestamp = self.api.get_changestamp()
+        params = {
+            "imdb_id": self.imdb_id,
+            "name": self.name,
+            "banner": self.banner,
+            "poster": self.poster,
+            "tvdb_id": self.tvdb_id,
+            "tvrage_id": self.tvrage_id,
+            "youtube_trailer": self.youtube_trailer,
+        }
+        insert_params = {
+            "modified_at": changestamp, "created_at": changestamp,
+            "id": self.id}
+        insert_params.update(params)
+        names = sorted(insert_params.iterkeys())
         self.api.db.execute(
-            "insert or replace into series "
-            "(id, "
-            " created_at, modified_at, deleted_at, "
-            " imdb_id, name, banner, poster, tvdb_id, tvrage_id, "
-            " youtube_trailer) "
-            "values "
-            "(?,"
-            "coalesce(case when "
-            "(select created_at <= deleted_at from series where id = ?) "
-            "then ? else null end,"
-            "(select created_at from series where id = ?),?),"
-            "?,"
-            "null,"
-            "coalesce(?,(select imdb_id from series where id = ?)),"
-            "coalesce(?,(select name from series where id = ?)),"
-            "coalesce(?,(select banner from series where id = ?)),"
-            "coalesce(?,(select poster from series where id = ?)),"
-            "coalesce(?,(select tvdb_id from series where id = ?)),"
-            "coalesce(?,(select tvrage_id from series where id = ?)),"
-            "coalesce(?,(select youtube_trailer from series where id = ?)))",
-            (self.id,
-             self.id, changestamp, self.id, changestamp,
-             changestamp,
-             self.imdb_id, self.id,
-             self.name, self.id,
-             self.banner, self.id,
-             self.poster, self.id,
-             self.tvdb_id, self.id,
-             self.tvrage_id, self.id,
-             self.youtube_trailer, self.id))
+            "insert or ignore into series (%(n)s) values (%(v)s)" %
+            {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
+            insert_params)
+        where_names = sorted(params.iterkeys())
+        set_names = sorted(params.iterkeys())
+        set_names.append("modified_at")
+        update_params = dict(params)
+        update_params["modified_at"] = changestamp
+        update_params["id"] = self.id
+        self.api.db.execute(
+            "update series set %(u)s where id = :id and (%(w)s)" %
+            {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
+             "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
+                 for n in where_names)},
+            update_params)
 
     def __repr__(self):
         return "<Series %s \"%s\">" % (self.id, self.name)
@@ -191,24 +190,35 @@ class Group(object):
             "select id from category where name = ?",
             (self.category,)).fetchone()[0]
         self.series.serialize(changestamp=changestamp)
+        params = {
+            "category_id": category_id,
+            "name": self.name,
+            "series_id": self.series.id,
+            "deleted_at": None,
+        }
+        insert_params = {
+            "modified_at": changestamp, "created_at": changestamp,
+            "id": self.id}
+        insert_params.update(params)
+        names = sorted(insert_params.iterkeys())
         self.api.db.execute(
-            "insert or replace into torrent_entry_group "
-            "(id,"
-            "created_at, modified_at, deleted_at, "
-            "category_id, name, series_id) values "
-            "(?,"
-            "coalesce("
-            "case when "
-            "(select created_at <= deleted_at from torrent_entry_group "
-            "where id = ?) then ? else null end,"
-            "(select created_at from torrent_entry_group where id = ?),?),"
-            "?,"
-            "null,"
-            "?, ?, ?)",
-            (self.id,
-             self.id, changestamp, self.id, changestamp,
-             changestamp,
-             category_id, self.name, self.series.id))
+            "insert or ignore into torrent_entry_group (%(n)s) "
+            "values (%(v)s)" %
+            {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
+            insert_params)
+        where_names = sorted(params.iterkeys())
+        set_names = sorted(params.iterkeys())
+        set_names.append("modified_at")
+        update_params = dict(params)
+        update_params["modified_at"] = changestamp
+        update_params["id"] = self.id
+        self.api.db.execute(
+            "update torrent_entry_group set %(u)s "
+            "where id = :id and (%(w)s)" %
+            {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
+             "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
+                 for n in where_names)},
+            update_params)
 
     def __repr__(self):
         return "<Group %s \"%s\" \"%s\">" % (
@@ -234,24 +244,24 @@ class TorrentEntry(object):
     def _create_schema(cls, api):
         api.db.execute(
             "create table if not exists torrent_entry ("
-            "  id integer primary key,"
-            "  codec_id integer not null,"
-            "  container_id integer not null,"
-            "  group_id integer not null,"
-            "  info_hash text,"
-            "  leechers integer not null,"
-            "  origin_id integer not null,"
-            "  release_name text not null,"
-            "  resolution_id integer not null,"
-            "  seeders integer not null,"
-            "  size integer not null,"
-            "  snatched integer not null,"
-            "  source_id integer not null,"
-            "  time integer not null,"
-            "  created_at integer not null,"
-            "  modified_at integer not null,"
-            "  deleted_at integer,"
-            "  raw_torrent_cached tinyint not null default 0)")
+            "id integer primary key, "
+            "codec_id integer not null, "
+            "container_id integer not null, "
+            "group_id integer not null, "
+            "info_hash text, "
+            "leechers integer not null, "
+            "origin_id integer not null, "
+            "release_name text not null, "
+            "resolution_id integer not null, "
+            "seeders integer not null, "
+            "size integer not null, "
+            "snatched integer not null, "
+            "source_id integer not null, "
+            "time integer not null, "
+            "created_at integer not null, "
+            "modified_at integer not null, "
+            "deleted_at integer, "
+            "raw_torrent_cached tinyint not null default 0)")
         api.db.execute(
             "create index if not exists torrent_entry_created_at "
             "on torrent_entry (created_at)")
@@ -301,20 +311,20 @@ class TorrentEntry(object):
     def _from_db(cls, api, id):
         row = api.db.execute(
             "select "
-            "  torrent_entry.id as id,"
-            "  codec.name as codec,"
-            "  container.name as container,"
-            "  torrent_entry.group_id as group_id,"
-            "  info_hash,"
-            "  leechers,"
-            "  origin.name as origin,"
-            "  release_name,"
-            "  resolution.name as resolution,"
-            "  seeders,"
-            "  size,"
-            "  snatched,"
-            "  source.name as source,"
-            "  time "
+            "torrent_entry.id as id, "
+            "codec.name as codec, "
+            "container.name as container, "
+            "torrent_entry.group_id as group_id, "
+            "info_hash, "
+            "leechers, "
+            "origin.name as origin, "
+            "release_name, "
+            "resolution.name as resolution, "
+            "seeders, "
+            "size, "
+            "snatched, "
+            "source.name as source, "
+            "time "
             "from torrent_entry "
             "left outer join codec on codec.id = codec_id "
             "left outer join container on container.id = container_id "
@@ -401,66 +411,45 @@ class TorrentEntry(object):
         if changestamp is None:
             changestamp = self.api.get_changestamp()
         self.group.serialize(changestamp=changestamp)
+        params = {
+            "codec_id": codec_id,
+            "container_id": container_id,
+            "group_id": self.group.id,
+            "info_hash": self.info_hash,
+            "leechers": self.leechers,
+            "origin_id": origin_id,
+            "release_name": self.release_name,
+            "seeders": self.seeders,
+            "size": self.size,
+            "snatched": self.snatched,
+            "source_id": source_id,
+            "time": self.time,
+            "raw_torrent_cached": self.raw_torrent_cached,
+            "deleted_at": None,
+        }
+        insert_params = {
+            "id": self.id, "created_at": changestamp,
+            "modified_at": changestamp,
+        }
+        insert_params.update(params)
+        names = sorted(insert_params.iterkeys())
         self.api.db.execute(
-            "insert or replace into torrent_entry ("
-            "id,"
-            "created_at,"
-            "modified_at,"
-            "deleted_at,"
-            "codec_id,"
-            "container_id,"
-            "group_id,"
-            "info_hash,"
-            "leechers,"
-            "origin_id,"
-            "release_name,"
-            "resolution_id,"
-            "seeders,"
-            "size,"
-            "snatched,"
-            "source_id,"
-            "time,"
-            "raw_torrent_cached"
-            ") values ("
-            "?,"
-            "coalesce(case when "
-            "(select created_at <= deleted_at from torrent_entry where id = ?) "
-            "then ? else null end,"
-            "(select created_at from torrent_entry where id = ?),?),"
-            "?,"
-            "null,"
-            "coalesce(?,(select codec_id from torrent_entry where id = ?)),"
-            "coalesce(?,(select container_id from torrent_entry where id = ?)),"
-            "coalesce(?,(select group_id from torrent_entry where id = ?)),"
-            "coalesce(?,(select info_hash from torrent_entry where id = ?)),"
-            "coalesce(?,(select leechers from torrent_entry where id = ?)),"
-            "coalesce(?,(select origin_id from torrent_entry where id = ?)),"
-            "coalesce(?,(select release_name from torrent_entry where id = ?)),"
-            "coalesce(?,(select resolution_id from torrent_entry where id = ?)),"
-            "coalesce(?,(select seeders from torrent_entry where id = ?)),"
-            "coalesce(?,(select size from torrent_entry where id = ?)),"
-            "coalesce(?,(select snatched from torrent_entry where id = ?)),"
-            "coalesce(?,(select source_id from torrent_entry where id = ?)),"
-            "coalesce(?,(select time from torrent_entry where id = ?)),"
-            "coalesce(?,(select raw_torrent_cached from torrent_entry where id = ?))"
-            ")",
-            (self.id,
-             self.id, changestamp, self.id, changestamp,
-             changestamp,
-             codec_id, self.id,
-             container_id, self.id,
-             self.group.id, self.id,
-             self._info_hash, self.id,
-             self.leechers, self.id,
-             origin_id, self.id,
-             self.release_name, self.id,
-             resolution_id, self.id,
-             self.seeders, self.id,
-             self.size, self.id,
-             self.snatched, self.id,
-             source_id, self.id,
-             self.time, self.id,
-             self.raw_torrent_cached, self.id))
+            "insert or ignore into torrent_entry (%(n)s) values (%(v)s)" %
+            {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
+            insert_params)
+        where_names = sorted(params.iterkeys())
+        set_names = sorted(params.iterkeys())
+        set_names.append("modified_at")
+        update_params = dict(params)
+        update_params["modified_at"] = changestamp
+        update_params["id"] = self.id
+        self.api.db.execute(
+            "update torrent_entry set %(u)s "
+            "where id = :id and (%(w)s)" %
+            {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
+             "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
+                 for n in where_names)},
+            update_params)
 
     @property
     def link(self):
