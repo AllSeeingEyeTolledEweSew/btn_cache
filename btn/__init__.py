@@ -793,14 +793,14 @@ class API(object):
 
     def _torrent_entry_from_json(self, tj):
         series = Series(
-            self, id=tj["SeriesID"], name=tj["Series"],
+            self, id=int(tj["SeriesID"]), name=tj["Series"],
             banner=tj["SeriesBanner"], poster=tj["SeriesPoster"],
             imdb_id=tj["ImdbID"],
             tvdb_id=int(tj["TvdbID"]) if tj.get("TvdbID") else None,
             tvrage_id=int(tj["TvrageID"]) if tj.get("TvrageID") else None,
             youtube_trailer=tj["YoutubeTrailer"] or None)
         group = Group(
-            self, id=tj["GroupID"], category=tj["Category"],
+            self, id=int(tj["GroupID"]), category=tj["Category"],
             name=tj["GroupName"], series=series)
         return TorrentEntry(self, id=int(tj["TorrentID"]), group=group,
             codec=tj["Codec"], container=tj["Container"],
