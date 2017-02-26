@@ -325,7 +325,7 @@ class TorrentEntry(object):
         self.codec = codec
         self.container = container
         self.group = group
-        self._info_hash = info_hash
+        self.info_hash = info_hash
         self.leechers = leechers
         self.origin = origin
         self.release_name = release_name
@@ -395,6 +395,7 @@ class TorrentEntry(object):
             "leechers": self.leechers,
             "origin_id": origin_id,
             "release_name": self.release_name,
+            "resolution_id": resolution_id,
             "seeders": self.seeders,
             "size": self.size,
             "snatched": self.snatched,
@@ -459,26 +460,6 @@ class TorrentEntry(object):
                 with open(self.raw_torrent_path, mode="wb") as f:
                     f.write(self._raw_torrent)
             return self._raw_torrent
-
-    @property
-    def info_hash(self):
-        with self._lock:
-            if self._info_hash is not None:
-                return self._info_hash
-            row = self.api.db.execute(
-                "select info_hash from torrent_entry where id = ?",
-                (self.id,)).fetchone()
-            if row and row["info_hash"] is not None:
-                self._info_hash = row["info_hash"]
-                return self._info_hash
-            info = self.torrent_object[b"info"]
-            self._info_hash = hashlib.sha1(
-                better_bencode.dumps(info)).hexdigest().upper()
-            with self.api.db:
-                self.api.db.execute(
-                    "update or ignore torrent_entry set info_hash = ? "
-                    "where id = ?", (self._info_hash, self.id))
-            return self._info_hash
 
     @property
     def torrent_object(self):
