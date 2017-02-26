@@ -340,50 +340,40 @@ class TorrentEntry(object):
         self._raw_torrent = None
 
     def serialize(self, changestamp=None):
-        if self.codec is not None:
-            self.api.db.execute(
-                "insert or ignore into codec (name) values (?)", (self.codec,))
-            codec_id = self.api.db.execute(
-                "select id from codec where name = ?",
-                (self.codec,)).fetchone()[0]
-        else:
-            codec_id = None
-        if self.container is not None:
-            self.api.db.execute(
-                "insert or ignore into container (name) values (?)",
-                (self.container,))
-            container_id = self.api.db.execute(
-                "select id from container where name = ?",
-                (self.container,)).fetchone()[0]
-        else:
-            container_id = None
-        if self.origin is not None:
-            self.api.db.execute(
-                "insert or ignore into origin (name) values (?)",
-                (self.origin,))
-            origin_id = self.api.db.execute(
-                "select id from origin where name = ?",
-                (self.origin,)).fetchone()[0]
-        else:
-            origin_id = None
-        if self.resolution is not None:
-            self.api.db.execute(
-                "insert or ignore into resolution (name) values (?)",
-                (self.resolution,))
-            resolution_id = self.api.db.execute(
-                "select id from resolution where name = ?",
-                (self.resolution,)).fetchone()[0]
-        else:
-            resolution_id = None
-        if self.source is not None:
-            self.api.db.execute(
-                "insert or ignore into source (name) values (?)",
-                (self.source,))
-            source_id = self.api.db.execute(
-                "select id from source where name = ?",
-                (self.source,)).fetchone()[0]
-        else:
-            source_id = None
+        self.api.db.execute(
+            "insert or ignore into codec (name) values (?)", (self.codec,))
+        codec_id = self.api.db.execute(
+            "select id from codec where name = ?",
+            (self.codec,)).fetchone()[0]
+
+        self.api.db.execute(
+            "insert or ignore into container (name) values (?)",
+            (self.container,))
+        container_id = self.api.db.execute(
+            "select id from container where name = ?",
+            (self.container,)).fetchone()[0]
+
+        self.api.db.execute(
+            "insert or ignore into origin (name) values (?)",
+            (self.origin,))
+        origin_id = self.api.db.execute(
+            "select id from origin where name = ?",
+            (self.origin,)).fetchone()[0]
+
+        self.api.db.execute(
+            "insert or ignore into resolution (name) values (?)",
+            (self.resolution,))
+        resolution_id = self.api.db.execute(
+            "select id from resolution where name = ?",
+            (self.resolution,)).fetchone()[0]
+
+        self.api.db.execute(
+            "insert or ignore into source (name) values (?)",
+            (self.source,))
+        source_id = self.api.db.execute(
+            "select id from source where name = ?",
+            (self.source,)).fetchone()[0]
+
         if changestamp is None:
             changestamp = self.api.get_changestamp()
         self.group.serialize(changestamp=changestamp)
