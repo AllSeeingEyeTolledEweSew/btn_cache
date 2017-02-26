@@ -54,8 +54,8 @@ class Scraper(object):
             changestamp = self.api.get_changestamp()
             if is_end:
                 self.api.db.execute(
-                    "update torrent_entry set deleted_at = ? where id < ? "
-                    "and deleted_at is null",
+                    "update torrent_entry set deleted = 1, updated_at = ? "
+                    "where id < ? and not deleted",
                     (changestamp, ids[-1]))
             self.api.db.execute(
                 "create temp table ids (id integer not null primary key)")
@@ -63,8 +63,8 @@ class Scraper(object):
                 "insert into temp.ids (id) values (?)",
                 [(id,) for id in ids])
             self.api.db.execute(
-                "update torrent_entry set deleted_at = ? "
-                "where deleted_at is null and id < ? and id > ? and "
+                "update torrent_entry set deleted = 1, updated_at = ? "
+                "where not deleted and id < ? and id > ? and "
                 "id not in (select id from temp.ids)",
                 (changestamp, ids[0], ids[-1]))
             self.api.db.execute("drop table temp.ids")
@@ -115,7 +115,7 @@ class Scraper(object):
             if offset is None:
                 log().debug("No current scrape.")
                 c = self.api.db.execute(
-                    "select id from torrent_entry where deleted_at is null "
+                    "select id from torrent_entry where not deleted "
                     "order by id desc")
                 db_ids = [row["id"] for row in c]
 

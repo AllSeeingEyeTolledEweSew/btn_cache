@@ -41,26 +41,19 @@ class Series(object):
     def _create_schema(cls, api):
         api.db.execute(
             "create table if not exists series ("
-            "  id integer primary key,"
-            "  imdb_id text,"
-            "  name text,"
-            "  banner text,"
-            "  poster text,"
-            "  tvdb_id integer,"
-            "  tvrage_id integer,"
-            "  youtube_trailer text,"
-            "  created_at integer not null,"
-            "  modified_at integer not null,"
-            "  deleted_at integer)")
+            "id integer primary key, "
+            "imdb_id text, "
+            "name text, "
+            "banner text, "
+            "poster text, "
+            "tvdb_id integer, "
+            "tvrage_id integer, "
+            "youtube_trailer text, "
+            "updated_at integer not null, "
+            "deleted tinyint not null default 0)")
         api.db.execute(
-            "create index if not exists series_created_at "
-            "on series (created_at)")
-        api.db.execute(
-            "create index if not exists series_modified_at "
-            "on series (modified_at)")
-        api.db.execute(
-            "create index if not exists series_deleted_at "
-            "on series (deleted_at)")
+            "create index if not exists series_on_updated_at "
+            "on series (updated_at)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -69,7 +62,7 @@ class Series(object):
         if not row:
             return None
         row = dict(row)
-        for k in ("created_at", "modified_at", "deleted_at"):
+        for k in ("updated_at", "deleted"):
             del row[k]
         return cls(api, **row)
 
@@ -96,10 +89,9 @@ class Series(object):
             "tvdb_id": self.tvdb_id,
             "tvrage_id": self.tvrage_id,
             "youtube_trailer": self.youtube_trailer,
+            "deleted": 0,
         }
-        insert_params = {
-            "modified_at": changestamp, "created_at": changestamp,
-            "id": self.id}
+        insert_params = {"updated_at": changestamp, "id": self.id}
         insert_params.update(params)
         names = sorted(insert_params.iterkeys())
         self.api.db.execute(
@@ -108,9 +100,9 @@ class Series(object):
             insert_params)
         where_names = sorted(params.iterkeys())
         set_names = sorted(params.iterkeys())
-        set_names.append("modified_at")
+        set_names.append("updated_at")
         update_params = dict(params)
-        update_params["modified_at"] = changestamp
+        update_params["updated_at"] = changestamp
         update_params["id"] = self.id
         self.api.db.execute(
             "update series set %(u)s where id = :id and (%(w)s)" %
@@ -129,26 +121,19 @@ class Group(object):
     def _create_schema(cls, api):
         api.db.execute(
             "create table if not exists torrent_entry_group ("
-            "  id integer primary key,"
-            "  category_id integer not null,"
-            "  name text not null,"
-            "  series_id integer not null,"
-            "  created_at integer not null,"
-            "  modified_at integer not null,"
-            "  deleted_at integer)")
+            "id integer primary key,"
+            "category_id integer not null,"
+            "name text not null,"
+            "series_id integer not null,"
+            "updated_at integer not null, "
+            "deleted tinyint not null default 0)")
         api.db.execute(
-            "create index if not exists torrent_entry_group_created_at "
-            "on torrent_entry_group (created_at)")
-        api.db.execute(
-            "create index if not exists torrent_entry_group_modified_at  "
-            "on torrent_entry_group (modified_at)")
-        api.db.execute(
-            "create index if not exists torrent_entry_group_deleted_at  "
-            "on torrent_entry_group (deleted_at)")
+            "create index if not exists torrent_entry_group_on_updated_at "
+            "on torrent_entry_group (updated_at)")
         api.db.execute(
             "create table if not exists category ("
-            "  id integer primary key,"
-            "  name text not null)")
+            "id integer primary key, "
+            "name text not null)")
         api.db.execute(
             "create unique index if not exists category_name "
             "on category (name)")
@@ -157,10 +142,10 @@ class Group(object):
     def _from_db(cls, api, id):
         row = api.db.execute(
             "select "
-            "  torrent_entry_group.id as id,"
-            "  category.name as category,"
-            "  torrent_entry_group.name as name,"
-            "  series_id "
+            "torrent_entry_group.id as id, "
+            "category.name as category, "
+            "torrent_entry_group.name as name, "
+            "series_id "
             "from torrent_entry_group "
             "left outer join category "
             "on torrent_entry_group.category_id = category.id "
@@ -194,11 +179,9 @@ class Group(object):
             "category_id": category_id,
             "name": self.name,
             "series_id": self.series.id,
-            "deleted_at": None,
+            "deleted": 0,
         }
-        insert_params = {
-            "modified_at": changestamp, "created_at": changestamp,
-            "id": self.id}
+        insert_params = {"updated_at": changestamp, "id": self.id}
         insert_params.update(params)
         names = sorted(insert_params.iterkeys())
         self.api.db.execute(
@@ -208,9 +191,9 @@ class Group(object):
             insert_params)
         where_names = sorted(params.iterkeys())
         set_names = sorted(params.iterkeys())
-        set_names.append("modified_at")
+        set_names.append("updated_at")
         update_params = dict(params)
-        update_params["modified_at"] = changestamp
+        update_params["updated_at"] = changestamp
         update_params["id"] = self.id
         self.api.db.execute(
             "update torrent_entry_group set %(u)s "
@@ -258,51 +241,44 @@ class TorrentEntry(object):
             "snatched integer not null, "
             "source_id integer not null, "
             "time integer not null, "
-            "created_at integer not null, "
-            "modified_at integer not null, "
-            "deleted_at integer, "
-            "raw_torrent_cached tinyint not null default 0)")
+            "raw_torrent_cached tinyint not null default 0, "
+            "updated_at integer not null, "
+            "deleted tinyint not null default 0)")
         api.db.execute(
-            "create index if not exists torrent_entry_created_at "
-            "on torrent_entry (created_at)")
-        api.db.execute(
-            "create index if not exists torrent_entry_modified_at "
-            "on torrent_entry (modified_at)")
-        api.db.execute(
-            "create index if not exists torrent_entry_deleted_at "
-            "on torrent_entry (deleted_at)")
+            "create index if not exists torrent_entry_updated_at "
+            "on torrent_entry (updated_at)")
         api.db.execute(
             "create table if not exists codec ("
-            "  id integer primary key,"
-            "  name text not null)")
+            "id integer primary key, "
+            "name text not null)")
         api.db.execute(
             "create unique index if not exists codec_name "
             "on codec (name)")
         api.db.execute(
             "create table if not exists container ("
-            "  id integer primary key,"
-            "  name text not null)")
+            "id integer primary key, "
+            "name text not null)")
         api.db.execute(
             "create unique index if not exists container_name "
             "on container (name)")
         api.db.execute(
             "create table if not exists origin ("
-            "  id integer primary key,"
-            "  name text not null)")
+            "id integer primary key, "
+            "name text not null)")
         api.db.execute(
             "create unique index if not exists origin_name "
             "on origin (name)")
         api.db.execute(
             "create table if not exists resolution ("
-            "  id integer primary key,"
-            "  name text not null)")
+            "id integer primary key, "
+            "name text not null)")
         api.db.execute(
             "create unique index if not exists resolution_name "
             "on resolution (name)")
         api.db.execute(
             "create table if not exists source ("
-            "  id integer primary key,"
-            "  name text not null)")
+            "id integer primary key, "
+            "name text not null)")
         api.db.execute(
             "create unique index if not exists source_name "
             "on source (name)")
@@ -425,12 +401,9 @@ class TorrentEntry(object):
             "source_id": source_id,
             "time": self.time,
             "raw_torrent_cached": self.raw_torrent_cached,
-            "deleted_at": None,
+            "deleted": 0,
         }
-        insert_params = {
-            "id": self.id, "created_at": changestamp,
-            "modified_at": changestamp,
-        }
+        insert_params = {"id": self.id, "updated_at": changestamp}
         insert_params.update(params)
         names = sorted(insert_params.iterkeys())
         self.api.db.execute(
@@ -439,9 +412,9 @@ class TorrentEntry(object):
             insert_params)
         where_names = sorted(params.iterkeys())
         set_names = sorted(params.iterkeys())
-        set_names.append("modified_at")
+        set_names.append("updated_at")
         update_params = dict(params)
-        update_params["modified_at"] = changestamp
+        update_params["updated_at"] = changestamp
         update_params["id"] = self.id
         self.api.db.execute(
             "update torrent_entry set %(u)s "
@@ -888,7 +861,7 @@ class API(object):
             params.append(
                 ("torrent_entry.time = ?", time.time() - kwargs["age"]))
 
-        params.append(("deleted_at is ?", "null"))
+        params.append(("deleted = ?", 0))
 
         constraint = " and ".join(c for c, _ in params)
         constraint_clause = "where %s" % constraint
@@ -1006,7 +979,6 @@ class API(object):
             timestamp = 0
 
         args = {
-            "create": CrudResult.ACTION_CREATE,
             "delete": CrudResult.ACTION_DELETE,
             "update": CrudResult.ACTION_UPDATE,
             "ts": timestamp}
@@ -1023,16 +995,13 @@ class API(object):
 
         for type, table in candidates:
             c = self.db.execute(
-                "select "
-                "case when created_at > :ts then :create "
-                "when deleted_at > :ts then :delete "
-                "else :update end, "
-                "id "
+                "select id, updated_at, deleted "
                 "from %(table)s where "
-                "((created_at > :ts or modified_at > :ts) "
-                "and deleted_at is null) or "
-                "(created_at <= :ts and "
-                "(modified_at > :ts or deleted_at > :ts)) " % {"table": table},
-                args)
-            for action, id in c:
+                "updated_at > ?" % {"table": table},
+                (timestamp,))
+            for id, updated_at, deleted in c:
+                if deleted:
+                    action = CrudResult.ACTION_DELETE
+                else:
+                    action = CrudResult.ACTION_UPDATE
                 yield CrudResult(type, action, id)
