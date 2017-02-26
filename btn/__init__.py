@@ -250,7 +250,8 @@ class TorrentEntry(object):
             "  time integer not null,"
             "  created_at integer not null,"
             "  modified_at integer not null,"
-            "  deleted_at integer)")
+            "  deleted_at integer,"
+            "  raw_torrent_cached tinyint not null default 0)")
         api.db.execute(
             "create index if not exists torrent_entry_created_at "
             "on torrent_entry (created_at)")
@@ -418,7 +419,8 @@ class TorrentEntry(object):
             "size,"
             "snatched,"
             "source_id,"
-            "time"
+            "time,"
+            "raw_torrent_cached"
             ") values ("
             "?,"
             "coalesce(case when "
@@ -439,7 +441,8 @@ class TorrentEntry(object):
             "coalesce(?,(select size from torrent_entry where id = ?)),"
             "coalesce(?,(select snatched from torrent_entry where id = ?)),"
             "coalesce(?,(select source_id from torrent_entry where id = ?)),"
-            "coalesce(?,(select time from torrent_entry where id = ?))"
+            "coalesce(?,(select time from torrent_entry where id = ?)),"
+            "coalesce(?,(select raw_torrent_cached from torrent_entry where id = ?))"
             ")",
             (self.id,
              self.id, changestamp, self.id, changestamp,
@@ -456,7 +459,8 @@ class TorrentEntry(object):
              self.size, self.id,
              self.snatched, self.id,
              source_id, self.id,
-             self.time, self.id))
+             self.time, self.id,
+             self.raw_torrent_cached, self.id))
 
     @property
     def link(self):
@@ -470,11 +474,15 @@ class TorrentEntry(object):
         return os.path.join(self.api.cache_path, "torrents", str(self.id))
 
     @property
+    def raw_torrent_cached(self):
+        return os.path.exists(self.raw_torrent_path)
+
+    @property
     def raw_torrent(self):
         with self._lock:
             if self._raw_torrent is not None:
                 return self._raw_torrent
-            if os.path.exists(self.raw_torrent_path):
+            if self.raw_torrent_cached:
                 with open(self.raw_torrent_path, mode="rb") as f:
                     self._raw_torrent = f.read()
                 return self._raw_torrent
