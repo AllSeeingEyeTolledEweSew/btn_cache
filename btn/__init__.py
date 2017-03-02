@@ -560,6 +560,9 @@ class CrudResult(object):
         self.action = action
         self.id = id
 
+    def __repr__(self):
+        return "<CrudResult %s %s %s>" % (self.action, self.type, self.id)
+
 
 class Error(Exception):
 
