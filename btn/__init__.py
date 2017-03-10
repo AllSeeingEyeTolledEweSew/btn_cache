@@ -54,6 +54,9 @@ class Series(object):
         api.db.execute(
             "create index if not exists series_on_updated_at "
             "on series (updated_at)")
+        api.db.execute(
+            "create index if not exists series_on_tvdb_id "
+            "on series (tvdb_id)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -130,6 +133,9 @@ class Group(object):
         api.db.execute(
             "create index if not exists torrent_entry_group_on_updated_at "
             "on torrent_entry_group (updated_at)")
+        api.db.execute(
+            "create index if not exists torrent_entry_group_on_series_id "
+            "on torrent_entry_group (series_id)")
         api.db.execute(
             "create table if not exists category ("
             "id integer primary key, "
@@ -247,6 +253,9 @@ class TorrentEntry(object):
         api.db.execute(
             "create index if not exists torrent_entry_updated_at "
             "on torrent_entry (updated_at)")
+        api.db.execute(
+            "create index if not exists torrent_entry_on_group_id "
+            "on torrent_entry (group_id)")
         api.db.execute(
             "create table if not exists codec ("
             "id integer primary key, "
