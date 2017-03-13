@@ -4,10 +4,10 @@ import json as json_lib
 import logging
 import os
 import re
-import sqlite3
 import threading
 from urllib import parse as urlparse
 
+import apsw
 import better_bencode
 import requests
 import token_bucket as token_bucket_lib
@@ -39,32 +39,35 @@ class Series(object):
 
     @classmethod
     def _create_schema(cls, api):
-        api.db.execute(
-            "create table if not exists series ("
-            "id integer primary key, "
-            "imdb_id text, "
-            "name text, "
-            "banner text, "
-            "poster text, "
-            "tvdb_id integer, "
-            "tvrage_id integer, "
-            "youtube_trailer text, "
-            "updated_at integer not null, "
-            "deleted tinyint not null default 0)")
-        api.db.execute(
-            "create index if not exists series_on_updated_at "
-            "on series (updated_at)")
-        api.db.execute(
-            "create index if not exists series_on_tvdb_id "
-            "on series (tvdb_id)")
+        with api.db:
+            c = api.db.cursor()
+            c.execute(
+                "create table if not exists series ("
+                "id integer primary key, "
+                "imdb_id text, "
+                "name text, "
+                "banner text, "
+                "poster text, "
+                "tvdb_id integer, "
+                "tvrage_id integer, "
+                "youtube_trailer text, "
+                "updated_at integer not null, "
+                "deleted tinyint not null default 0)")
+            c.execute(
+                "create index if not exists series_on_updated_at "
+                "on series (updated_at)")
+            c.execute(
+                "create index if not exists series_on_tvdb_id "
+                "on series (tvdb_id)")
 
     @classmethod
     def _from_db(cls, api, id):
-        row = api.db.execute(
+        c = api.db.cursor()
+        row = c.execute(
             "select * from series where id = ?", (id,)).fetchone()
         if not row:
             return None
-        row = dict(row)
+        row = dict(zip((n for n, t in c.getdescription()), row))
         for k in ("updated_at", "deleted"):
             del row[k]
         return cls(api, **row)
@@ -82,37 +85,38 @@ class Series(object):
         self.youtube_trailer = youtube_trailer
 
     def serialize(self, changestamp=None):
-        if changestamp is None:
-            changestamp = self.api.get_changestamp()
-        params = {
-            "imdb_id": self.imdb_id,
-            "name": self.name,
-            "banner": self.banner,
-            "poster": self.poster,
-            "tvdb_id": self.tvdb_id,
-            "tvrage_id": self.tvrage_id,
-            "youtube_trailer": self.youtube_trailer,
-            "deleted": 0,
-        }
-        insert_params = {"updated_at": changestamp, "id": self.id}
-        insert_params.update(params)
-        names = sorted(insert_params.iterkeys())
-        self.api.db.execute(
-            "insert or ignore into series (%(n)s) values (%(v)s)" %
-            {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
-            insert_params)
-        where_names = sorted(params.iterkeys())
-        set_names = sorted(params.iterkeys())
-        set_names.append("updated_at")
-        update_params = dict(params)
-        update_params["updated_at"] = changestamp
-        update_params["id"] = self.id
-        self.api.db.execute(
-            "update series set %(u)s where id = :id and (%(w)s)" %
-            {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
-             "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
-                 for n in where_names)},
-            update_params)
+        with self.api.db:
+            if changestamp is None:
+                changestamp = self.api.get_changestamp()
+            params = {
+                "imdb_id": self.imdb_id,
+                "name": self.name,
+                "banner": self.banner,
+                "poster": self.poster,
+                "tvdb_id": self.tvdb_id,
+                "tvrage_id": self.tvrage_id,
+                "youtube_trailer": self.youtube_trailer,
+                "deleted": 0,
+            }
+            insert_params = {"updated_at": changestamp, "id": self.id}
+            insert_params.update(params)
+            names = sorted(insert_params.iterkeys())
+            self.api.db.cursor().execute(
+                "insert or ignore into series (%(n)s) values (%(v)s)" %
+                {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
+                insert_params)
+            where_names = sorted(params.iterkeys())
+            set_names = sorted(params.iterkeys())
+            set_names.append("updated_at")
+            update_params = dict(params)
+            update_params["updated_at"] = changestamp
+            update_params["id"] = self.id
+            self.api.db.cursor().execute(
+                "update series set %(u)s where id = :id and (%(w)s)" %
+                {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
+                 "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
+                     for n in where_names)},
+                update_params)
 
     def __repr__(self):
         return "<Series %s \"%s\">" % (self.id, self.name)
@@ -122,46 +126,50 @@ class Group(object):
 
     @classmethod
     def _create_schema(cls, api):
-        api.db.execute(
-            "create table if not exists torrent_entry_group ("
-            "id integer primary key,"
-            "category_id integer not null,"
-            "name text not null,"
-            "series_id integer not null,"
-            "updated_at integer not null, "
-            "deleted tinyint not null default 0)")
-        api.db.execute(
-            "create index if not exists torrent_entry_group_on_updated_at "
-            "on torrent_entry_group (updated_at)")
-        api.db.execute(
-            "create index if not exists torrent_entry_group_on_series_id "
-            "on torrent_entry_group (series_id)")
-        api.db.execute(
-            "create table if not exists category ("
-            "id integer primary key, "
-            "name text not null)")
-        api.db.execute(
-            "create unique index if not exists category_name "
-            "on category (name)")
+        with api.db:
+            c = api.db.cursor()
+            c.execute(
+                "create table if not exists torrent_entry_group ("
+                "id integer primary key,"
+                "category_id integer not null,"
+                "name text not null,"
+                "series_id integer not null,"
+                "updated_at integer not null, "
+                "deleted tinyint not null default 0)")
+            c.execute(
+                "create index if not exists torrent_entry_group_on_updated_at "
+                "on torrent_entry_group (updated_at)")
+            c.execute(
+                "create index if not exists torrent_entry_group_on_series_id "
+                "on torrent_entry_group (series_id)")
+            c.execute(
+                "create table if not exists category ("
+                "id integer primary key, "
+                "name text not null)")
+            c.execute(
+                "create unique index if not exists category_name "
+                "on category (name)")
 
     @classmethod
     def _from_db(cls, api, id):
-        row = api.db.execute(
-            "select "
-            "torrent_entry_group.id as id, "
-            "category.name as category, "
-            "torrent_entry_group.name as name, "
-            "series_id "
-            "from torrent_entry_group "
-            "left outer join category "
-            "on torrent_entry_group.category_id = category.id "
-            "where torrent_entry_group.id = ?",
-            (id,)).fetchone()
-        if not row:
-            return None
-        row = dict(row)
-        series = Series._from_db(api, row.pop("series_id"))
-        return cls(api, series=series, **row)
+        with api.db:
+            c = api.db.cursor()
+            row = c.execute(
+                "select "
+                "torrent_entry_group.id as id, "
+                "category.name as category, "
+                "torrent_entry_group.name as name, "
+                "series_id "
+                "from torrent_entry_group "
+                "left outer join category "
+                "on torrent_entry_group.category_id = category.id "
+                "where torrent_entry_group.id = ?",
+                (id,)).fetchone()
+            if not row:
+                return None
+            row = dict(zip((n for n, t in c.getdescription()), row))
+            series = Series._from_db(api, row.pop("series_id"))
+            return cls(api, series=series, **row)
 
     def __init__(self, api, id=None, category=None, name=None, series=None):
         self.api = api
@@ -172,42 +180,43 @@ class Group(object):
         self.series = series
 
     def serialize(self, changestamp=None):
-        if changestamp is None:
-            changestamp = self.api.get_changestamp()
-        self.api.db.execute(
-            "insert or ignore into category (name) values (?)",
-            (self.category,))
-        category_id = self.api.db.execute(
-            "select id from category where name = ?",
-            (self.category,)).fetchone()[0]
-        self.series.serialize(changestamp=changestamp)
-        params = {
-            "category_id": category_id,
-            "name": self.name,
-            "series_id": self.series.id,
-            "deleted": 0,
-        }
-        insert_params = {"updated_at": changestamp, "id": self.id}
-        insert_params.update(params)
-        names = sorted(insert_params.iterkeys())
-        self.api.db.execute(
-            "insert or ignore into torrent_entry_group (%(n)s) "
-            "values (%(v)s)" %
-            {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
-            insert_params)
-        where_names = sorted(params.iterkeys())
-        set_names = sorted(params.iterkeys())
-        set_names.append("updated_at")
-        update_params = dict(params)
-        update_params["updated_at"] = changestamp
-        update_params["id"] = self.id
-        self.api.db.execute(
-            "update torrent_entry_group set %(u)s "
-            "where id = :id and (%(w)s)" %
-            {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
-             "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
-                 for n in where_names)},
-            update_params)
+        with self.api.db:
+            if changestamp is None:
+                changestamp = self.api.get_changestamp()
+            self.api.db.cursor().execute(
+                "insert or ignore into category (name) values (?)",
+                (self.category,))
+            category_id = self.api.db.cursor().execute(
+                "select id from category where name = ?",
+                (self.category,)).fetchone()[0]
+            self.series.serialize(changestamp=changestamp)
+            params = {
+                "category_id": category_id,
+                "name": self.name,
+                "series_id": self.series.id,
+                "deleted": 0,
+            }
+            insert_params = {"updated_at": changestamp, "id": self.id}
+            insert_params.update(params)
+            names = sorted(insert_params.iterkeys())
+            self.api.db.cursor().execute(
+                "insert or ignore into torrent_entry_group (%(n)s) "
+                "values (%(v)s)" %
+                {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
+                insert_params)
+            where_names = sorted(params.iterkeys())
+            set_names = sorted(params.iterkeys())
+            set_names.append("updated_at")
+            update_params = dict(params)
+            update_params["updated_at"] = changestamp
+            update_params["id"] = self.id
+            self.api.db.cursor().execute(
+                "update torrent_entry_group set %(u)s "
+                "where id = :id and (%(w)s)" %
+                {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
+                 "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
+                     for n in where_names)},
+                update_params)
 
     def __repr__(self):
         return "<Group %s \"%s\" \"%s\">" % (
@@ -231,98 +240,102 @@ class TorrentEntry(object):
 
     @classmethod
     def _create_schema(cls, api):
-        api.db.execute(
-            "create table if not exists torrent_entry ("
-            "id integer primary key, "
-            "codec_id integer not null, "
-            "container_id integer not null, "
-            "group_id integer not null, "
-            "info_hash text, "
-            "leechers integer not null, "
-            "origin_id integer not null, "
-            "release_name text not null, "
-            "resolution_id integer not null, "
-            "seeders integer not null, "
-            "size integer not null, "
-            "snatched integer not null, "
-            "source_id integer not null, "
-            "time integer not null, "
-            "raw_torrent_cached tinyint not null default 0, "
-            "updated_at integer not null, "
-            "deleted tinyint not null default 0)")
-        api.db.execute(
-            "create index if not exists torrent_entry_updated_at "
-            "on torrent_entry (updated_at)")
-        api.db.execute(
-            "create index if not exists torrent_entry_on_group_id "
-            "on torrent_entry (group_id)")
-        api.db.execute(
-            "create table if not exists codec ("
-            "id integer primary key, "
-            "name text not null)")
-        api.db.execute(
-            "create unique index if not exists codec_name "
-            "on codec (name)")
-        api.db.execute(
-            "create table if not exists container ("
-            "id integer primary key, "
-            "name text not null)")
-        api.db.execute(
-            "create unique index if not exists container_name "
-            "on container (name)")
-        api.db.execute(
-            "create table if not exists origin ("
-            "id integer primary key, "
-            "name text not null)")
-        api.db.execute(
-            "create unique index if not exists origin_name "
-            "on origin (name)")
-        api.db.execute(
-            "create table if not exists resolution ("
-            "id integer primary key, "
-            "name text not null)")
-        api.db.execute(
-            "create unique index if not exists resolution_name "
-            "on resolution (name)")
-        api.db.execute(
-            "create table if not exists source ("
-            "id integer primary key, "
-            "name text not null)")
-        api.db.execute(
-            "create unique index if not exists source_name "
-            "on source (name)")
+        with api.db:
+            c = api.db.cursor()
+            c.execute(
+                "create table if not exists torrent_entry ("
+                "id integer primary key, "
+                "codec_id integer not null, "
+                "container_id integer not null, "
+                "group_id integer not null, "
+                "info_hash text, "
+                "leechers integer not null, "
+                "origin_id integer not null, "
+                "release_name text not null, "
+                "resolution_id integer not null, "
+                "seeders integer not null, "
+                "size integer not null, "
+                "snatched integer not null, "
+                "source_id integer not null, "
+                "time integer not null, "
+                "raw_torrent_cached tinyint not null default 0, "
+                "updated_at integer not null, "
+                "deleted tinyint not null default 0)")
+            c.execute(
+                "create index if not exists torrent_entry_updated_at "
+                "on torrent_entry (updated_at)")
+            c.execute(
+                "create index if not exists torrent_entry_on_group_id "
+                "on torrent_entry (group_id)")
+            c.execute(
+                "create table if not exists codec ("
+                "id integer primary key, "
+                "name text not null)")
+            c.execute(
+                "create unique index if not exists codec_name "
+                "on codec (name)")
+            c.execute(
+                "create table if not exists container ("
+                "id integer primary key, "
+                "name text not null)")
+            c.execute(
+                "create unique index if not exists container_name "
+                "on container (name)")
+            c.execute(
+                "create table if not exists origin ("
+                "id integer primary key, "
+                "name text not null)")
+            c.execute(
+                "create unique index if not exists origin_name "
+                "on origin (name)")
+            c.execute(
+                "create table if not exists resolution ("
+                "id integer primary key, "
+                "name text not null)")
+            c.execute(
+                "create unique index if not exists resolution_name "
+                "on resolution (name)")
+            c.execute(
+                "create table if not exists source ("
+                "id integer primary key, "
+                "name text not null)")
+            c.execute(
+                "create unique index if not exists source_name "
+                "on source (name)")
 
     @classmethod
     def _from_db(cls, api, id):
-        row = api.db.execute(
-            "select "
-            "torrent_entry.id as id, "
-            "codec.name as codec, "
-            "container.name as container, "
-            "torrent_entry.group_id as group_id, "
-            "info_hash, "
-            "leechers, "
-            "origin.name as origin, "
-            "release_name, "
-            "resolution.name as resolution, "
-            "seeders, "
-            "size, "
-            "snatched, "
-            "source.name as source, "
-            "time "
-            "from torrent_entry "
-            "left outer join codec on codec.id = codec_id "
-            "left outer join container on container.id = container_id "
-            "left outer join origin on origin.id = origin_id "
-            "left outer join resolution on resolution.id = resolution_id "
-            "left outer join source on source.id = source_id "
-            "where torrent_entry.id = ?",
-            (id,)).fetchone()
-        if not row:
-            return None
-        row = dict(**row)
-        group = Group._from_db(api, row.pop("group_id"))
-        return cls(api, group=group, **row)
+        with api.db:
+            c = api.db.cursor()
+            row = c.execute(
+                "select "
+                "torrent_entry.id as id, "
+                "codec.name as codec, "
+                "container.name as container, "
+                "torrent_entry.group_id as group_id, "
+                "info_hash, "
+                "leechers, "
+                "origin.name as origin, "
+                "release_name, "
+                "resolution.name as resolution, "
+                "seeders, "
+                "size, "
+                "snatched, "
+                "source.name as source, "
+                "time "
+                "from torrent_entry "
+                "left outer join codec on codec.id = codec_id "
+                "left outer join container on container.id = container_id "
+                "left outer join origin on origin.id = origin_id "
+                "left outer join resolution on resolution.id = resolution_id "
+                "left outer join source on source.id = source_id "
+                "where torrent_entry.id = ?",
+                (id,)).fetchone()
+            if not row:
+                return None
+            row = dict(zip((n for n, t in c.getdescription()), row))
+            group = Group._from_db(api, row.pop("group_id"))
+            return cls(api, group=group, **row)
 
     def __init__(self, api, id=None, codec=None, container=None, group=None,
                  info_hash=None, leechers=None, origin=None, release_name=None,
@@ -349,80 +362,81 @@ class TorrentEntry(object):
         self._raw_torrent = None
 
     def serialize(self, changestamp=None):
-        self.api.db.execute(
-            "insert or ignore into codec (name) values (?)", (self.codec,))
-        codec_id = self.api.db.execute(
-            "select id from codec where name = ?",
-            (self.codec,)).fetchone()[0]
+        with self.api.db:
+            self.api.db.cursor().execute(
+                "insert or ignore into codec (name) values (?)", (self.codec,))
+            codec_id = self.api.db.cursor().execute(
+                "select id from codec where name = ?",
+                (self.codec,)).fetchone()[0]
 
-        self.api.db.execute(
-            "insert or ignore into container (name) values (?)",
-            (self.container,))
-        container_id = self.api.db.execute(
-            "select id from container where name = ?",
-            (self.container,)).fetchone()[0]
+            self.api.db.cursor().execute(
+                "insert or ignore into container (name) values (?)",
+                (self.container,))
+            container_id = self.api.db.cursor().execute(
+                "select id from container where name = ?",
+                (self.container,)).fetchone()[0]
 
-        self.api.db.execute(
-            "insert or ignore into origin (name) values (?)",
-            (self.origin,))
-        origin_id = self.api.db.execute(
-            "select id from origin where name = ?",
-            (self.origin,)).fetchone()[0]
+            self.api.db.cursor().execute(
+                "insert or ignore into origin (name) values (?)",
+                (self.origin,))
+            origin_id = self.api.db.cursor().execute(
+                "select id from origin where name = ?",
+                (self.origin,)).fetchone()[0]
 
-        self.api.db.execute(
-            "insert or ignore into resolution (name) values (?)",
-            (self.resolution,))
-        resolution_id = self.api.db.execute(
-            "select id from resolution where name = ?",
-            (self.resolution,)).fetchone()[0]
+            self.api.db.cursor().execute(
+                "insert or ignore into resolution (name) values (?)",
+                (self.resolution,))
+            resolution_id = self.api.db.cursor().execute(
+                "select id from resolution where name = ?",
+                (self.resolution,)).fetchone()[0]
 
-        self.api.db.execute(
-            "insert or ignore into source (name) values (?)",
-            (self.source,))
-        source_id = self.api.db.execute(
-            "select id from source where name = ?",
-            (self.source,)).fetchone()[0]
+            self.api.db.cursor().execute(
+                "insert or ignore into source (name) values (?)",
+                (self.source,))
+            source_id = self.api.db.cursor().execute(
+                "select id from source where name = ?",
+                (self.source,)).fetchone()[0]
 
-        if changestamp is None:
-            changestamp = self.api.get_changestamp()
-        self.group.serialize(changestamp=changestamp)
-        params = {
-            "codec_id": codec_id,
-            "container_id": container_id,
-            "group_id": self.group.id,
-            "info_hash": self.info_hash,
-            "leechers": self.leechers,
-            "origin_id": origin_id,
-            "release_name": self.release_name,
-            "resolution_id": resolution_id,
-            "seeders": self.seeders,
-            "size": self.size,
-            "snatched": self.snatched,
-            "source_id": source_id,
-            "time": self.time,
-            "raw_torrent_cached": self.raw_torrent_cached,
-            "deleted": 0,
-        }
-        insert_params = {"id": self.id, "updated_at": changestamp}
-        insert_params.update(params)
-        names = sorted(insert_params.iterkeys())
-        self.api.db.execute(
-            "insert or ignore into torrent_entry (%(n)s) values (%(v)s)" %
-            {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
-            insert_params)
-        where_names = sorted(params.iterkeys())
-        set_names = sorted(params.iterkeys())
-        set_names.append("updated_at")
-        update_params = dict(params)
-        update_params["updated_at"] = changestamp
-        update_params["id"] = self.id
-        self.api.db.execute(
-            "update torrent_entry set %(u)s "
-            "where id = :id and (%(w)s)" %
-            {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
-             "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
-                 for n in where_names)},
-            update_params)
+            if changestamp is None:
+                changestamp = self.api.get_changestamp()
+            self.group.serialize(changestamp=changestamp)
+            params = {
+                "codec_id": codec_id,
+                "container_id": container_id,
+                "group_id": self.group.id,
+                "info_hash": self.info_hash,
+                "leechers": self.leechers,
+                "origin_id": origin_id,
+                "release_name": self.release_name,
+                "resolution_id": resolution_id,
+                "seeders": self.seeders,
+                "size": self.size,
+                "snatched": self.snatched,
+                "source_id": source_id,
+                "time": self.time,
+                "raw_torrent_cached": self.raw_torrent_cached,
+                "deleted": 0,
+            }
+            insert_params = {"id": self.id, "updated_at": changestamp}
+            insert_params.update(params)
+            names = sorted(insert_params.iterkeys())
+            self.api.db.cursor().execute(
+                "insert or ignore into torrent_entry (%(n)s) values (%(v)s)" %
+                {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
+                insert_params)
+            where_names = sorted(params.iterkeys())
+            set_names = sorted(params.iterkeys())
+            set_names.append("updated_at")
+            update_params = dict(params)
+            update_params["updated_at"] = changestamp
+            update_params["id"] = self.id
+            self.api.db.cursor().execute(
+                "update torrent_entry set %(u)s "
+                "where id = :id and (%(w)s)" %
+                {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
+                 "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
+                     for n in where_names)},
+                update_params)
 
     @property
     def link(self):
@@ -458,6 +472,7 @@ class TorrentEntry(object):
                     os.makedirs(os.path.dirname(self.raw_torrent_path))
                 with open(self.raw_torrent_path, mode="wb") as f:
                     f.write(self._raw_torrent)
+            self.serialize()
             return self._raw_torrent
 
     @property
@@ -472,31 +487,35 @@ class UserInfo(object):
 
     @classmethod
     def _create_schema(cls, api):
-        api.db.execute(
-            "create table if not exists user_info ("
-            "id integer primary key, "
-            "bonus integer not null, "
-            "class_name text not null, "
-            "class_level integer not null, "
-            "download integer not null, "
-            "email text not null, "
-            "enabled integer not null, "
-            "hnr integer not null, "
-            "invites integer not null, "
-            "join_date integer not null, "
-            "lumens integer not null, "
-            "paranoia integer not null, "
-            "snatches integer not null, "
-            "title text not null, "
-            "upload integer not null, "
-            "uploads_snatched integer not null, "
-            "username text not null)")
+        with api.db:
+            api.db.cursor().execute(
+                "create table if not exists user_info ("
+                "id integer primary key, "
+                "bonus integer not null, "
+                "class_name text not null, "
+                "class_level integer not null, "
+                "download integer not null, "
+                "email text not null, "
+                "enabled integer not null, "
+                "hnr integer not null, "
+                "invites integer not null, "
+                "join_date integer not null, "
+                "lumens integer not null, "
+                "paranoia integer not null, "
+                "snatches integer not null, "
+                "title text not null, "
+                "upload integer not null, "
+                "uploads_snatched integer not null, "
+                "username text not null)")
 
     @classmethod
     def _from_db(cls, api):
-        row = api.db.execute("select * from user_info limit 1").fetchone()
+        c = api.db.cursor()
+        row = c.execute(
+            "select * from user_info limit 1").fetchone()
         if not row:
             return None
+        row = dict(zip((n for n, t in c.getdescription()), row))
         return cls(api, **row)
 
 
@@ -526,22 +545,25 @@ class UserInfo(object):
         self.username = username
 
     def serialize(self):
-        self.api.db.execute("delete from user_info")
-        self.api.db.execute(
-            "insert or replace into user_info ("
-            "id, bonus, class_name, class_level, download, "
-            "email, enabled, hnr, invites, join_date, "
-            "lumens, paranoia, snatches, title, upload, "
-            "uploads_snatched, username) "
-            "values ("
-            "?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, "
-            "?, ?)",
-            (self.id, self.bonus, self.class_name, self.class_level,
-             self.download, self.email, self.enabled, self.hnr, self.invites,
-             self.join_date, self.lumens, self.paranoia, self.snatches,
-             self.title, self.upload, self.uploads_snatched, self.username))
+        with self.api.db:
+            c = self.api.db.cursor()
+            c.execute("delete from user_info")
+            c.execute(
+                "insert or replace into user_info ("
+                "id, bonus, class_name, class_level, download, "
+                "email, enabled, hnr, invites, join_date, "
+                "lumens, paranoia, snatches, title, upload, "
+                "uploads_snatched, username) "
+                "values ("
+                "?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, "
+                "?, ?)",
+                (self.id, self.bonus, self.class_name, self.class_level,
+                 self.download, self.email, self.enabled, self.hnr,
+                 self.invites, self.join_date, self.lumens, self.paranoia,
+                 self.snatches, self.title, self.upload, self.uploads_snatched,
+                 self.username))
 
     def __repr__(self):
         return "<UserInfo %s \"%s\">" % (self.id, self.username)
@@ -683,22 +705,23 @@ class API(object):
             return None
         if not os.path.exists(os.path.dirname(self.db_path)):
             os.makedirs(os.path.dirname(self.db_path))
-        db = sqlite3.connect(self.db_path)
+        db = apsw.Connection(self.db_path)
+        db.setbusytimeout(5000)
         self._local.db = db
-        db.row_factory = sqlite3.Row
         with db:
             Series._create_schema(self)
             Group._create_schema(self)
             TorrentEntry._create_schema(self)
             UserInfo._create_schema(self)
-            db.execute(
+            c = db.cursor()
+            c.execute(
                 "create table if not exists global ("
                 "  name text not null,"
                 "  value text not null)")
-            db.execute(
+            c.execute(
                 "create unique index if not exists global_name "
                 "on global (name)")
-            db.execute("pragma journal_mode=wal")
+        c.execute("pragma journal_mode=wal").fetchall()
         return db
 
     def mk_url(self, host, path, **qdict):
@@ -766,26 +789,30 @@ class API(object):
         return response["result"]
 
     def get_global(self, name):
-        row = self.db.execute(
+        row = self.db.cursor().execute(
             "select value from global where name = ?", (name,)).fetchone()
         return row[0] if row else None
 
     def set_global(self, name, value):
-        self.db.execute(
-            "insert or replace into global (name, value) values (?, ?)",
-            (name, value))
+        with self.db:
+            self.db.cursor().execute(
+                "insert or replace into global (name, value) values (?, ?)",
+                (name, value))
 
     def delete_global(self, name):
-        self.db.execute("delete from global where name = ?", (name,))
+        with self.db:
+            self.db.cursor().execute(
+                "delete from global where name = ?", (name,))
 
     def get_changestamp(self):
-        try:
-            changestamp = int(self.get_global("changestamp") or 0)
-        except ValueError:
-            changestamp = 0
-        changestamp += 1
-        self.set_global("changestamp", changestamp)
-        return changestamp
+        with self.db:
+            try:
+                changestamp = int(self.get_global("changestamp") or 0)
+            except ValueError:
+                changestamp = 0
+            changestamp += 1
+            self.set_global("changestamp", changestamp)
+            return changestamp
 
     def _from_db(self, id):
         return TorrentEntry._from_db(self, id)
@@ -887,8 +914,10 @@ class API(object):
         query = query_base % (
             "torrent_entry.id", constraint_clause, limit_clause, offset_clause)
 
-        c = self.db.execute(query, values)
-        return [self._from_db(r[0]) for r in c]
+        with self.db:
+            c = self.db.cursor()
+            c.execute(query, values)
+            return [self._from_db(r[0]) for r in c]
 
     def getTorrents(self, results=10, offset=0, **kwargs):
         sr_json = self.getTorrentsJson(
@@ -977,7 +1006,8 @@ class API(object):
             candidates = ((type, type_to_table[type]),)
 
         for type, table in candidates:
-            c = self.db.execute(
+            c = self.db.cursor()
+            c.execute(
                 "select id, updated_at, deleted "
                 "from %(table)s where "
                 "updated_at > ?" % {"table": table},

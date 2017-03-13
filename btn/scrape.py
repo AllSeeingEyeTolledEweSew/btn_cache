@@ -49,22 +49,23 @@ class Scraper(object):
 
         if ids:
             changestamp = self.api.get_changestamp()
+            c = self.api.db.cursor()
             if is_end:
-                self.api.db.execute(
+                c.execute(
                     "update torrent_entry set deleted = 1, updated_at = ? "
                     "where id < ? and not deleted",
                     (changestamp, ids[-1]))
-            self.api.db.execute(
+            c.execute(
                 "create temp table ids (id integer not null primary key)")
-            self.api.db.executemany(
+            c.executemany(
                 "insert into temp.ids (id) values (?)",
                 [(id,) for id in ids])
-            self.api.db.execute(
+            c.execute(
                 "update torrent_entry set deleted = 1, updated_at = ? "
                 "where not deleted and id < ? and id > ? and "
                 "id not in (select id from temp.ids)",
                 (changestamp, ids[0], ids[-1]))
-            self.api.db.execute("drop table temp.ids")
+            c.execute("drop table temp.ids")
 
         last_scraped = self.get_int("last_scraped")
         oldest = self.get_int("scrape_oldest")
@@ -111,17 +112,23 @@ class Scraper(object):
 
             if offset is None:
                 log().debug("No current scrape.")
-                c = self.api.db.execute(
+                c = self.api.db.cursor().execute(
                     "select id from torrent_entry where not deleted "
                     "order by id desc")
-                db_ids = [row["id"] for row in c]
+                db_ids = [id for id, in c]
 
         if offset is None:
             feed_ids = self.get_feed_ids()
-            if feed_ids == db_ids[:len(feed_ids)] and (
-                    feed_ids[0] == last_scraped):
+            db_ids = db_ids[:len(feed_ids)]
+            if feed_ids == db_ids and feed_ids[0] == last_scraped:
                 log().info("Feed has no changes. Latest is %s.", last_scraped)
                 return True
+            if set(feed_ids) - set(db_ids):
+                log().debug(
+                    "in feed but not in db: %s", set(feed_ids) - set(db_ids))
+            if set(db_ids) - set(feed_ids):
+                log().debug(
+                    "in db but not in feed: %s", set(db_ids) - set(feed_ids))
             offset = 0
 
         log().info("Scraping at offset %s", offset)
