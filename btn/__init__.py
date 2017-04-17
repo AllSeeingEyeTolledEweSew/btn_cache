@@ -447,7 +447,8 @@ class TorrentEntry(object):
 
     @property
     def raw_torrent_path(self):
-        return os.path.join(self.api.cache_path, "torrents", str(self.id))
+        return os.path.join(
+            self.api.raw_torrent_cache_path, "%s.torrent" % self.id)
 
     @property
     def raw_torrent_cached(self):
@@ -695,6 +696,11 @@ class API(object):
         if self.cache_path:
             return os.path.join(self.cache_path, "config.yaml")
         return None
+
+    @property
+    def raw_torrent_cache_path(self):
+        if self.cache_path:
+            return os.path.join(self.cache_path, "torrents")
 
     @property
     def db(self):
