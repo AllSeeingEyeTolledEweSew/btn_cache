@@ -9,7 +9,7 @@ with open("README") as readme:
 
 setup(
     name="btn",
-    version="0.1.0",
+    version="0.1.1",
     description="Caching API to broadcasthe.net",
     long_description=documentation,
     author="AllSeeingEyeTolledEweSew",
@@ -23,15 +23,11 @@ setup(
         "PyYAML>=3.12",
         "requests>=2.12.3",
         "token_bucket>=0.1.0",
+        "feedparser>=5.2.1",
     ],
-    extras_require={
-        "feeds": [
-            "feedparser>=5.2.1",
-        ],
-    },
     entry_points={
         "console_scripts": [
-            "btn_scrape = btn.cli.scrape:main [feeds]",
+            "btn_scrape = btn.cli.scrape:main",
         ],
     },
 )
