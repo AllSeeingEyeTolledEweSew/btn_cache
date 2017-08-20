@@ -5,7 +5,8 @@ import logging
 import os
 import re
 import threading
-from urllib import parse as urlparse
+import urllib
+import urlparse
 
 import apsw
 import better_bencode
@@ -100,13 +101,13 @@ class Series(object):
             }
             insert_params = {"updated_at": changestamp, "id": self.id}
             insert_params.update(params)
-            names = sorted(insert_params.iterkeys())
+            names = sorted(insert_params.keys())
             self.api.db.cursor().execute(
                 "insert or ignore into series (%(n)s) values (%(v)s)" %
                 {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
                 insert_params)
-            where_names = sorted(params.iterkeys())
-            set_names = sorted(params.iterkeys())
+            where_names = sorted(params.keys())
+            set_names = sorted(params.keys())
             set_names.append("updated_at")
             update_params = dict(params)
             update_params["updated_at"] = changestamp
@@ -198,14 +199,14 @@ class Group(object):
             }
             insert_params = {"updated_at": changestamp, "id": self.id}
             insert_params.update(params)
-            names = sorted(insert_params.iterkeys())
+            names = sorted(insert_params.keys())
             self.api.db.cursor().execute(
                 "insert or ignore into torrent_entry_group (%(n)s) "
                 "values (%(v)s)" %
                 {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
                 insert_params)
-            where_names = sorted(params.iterkeys())
-            set_names = sorted(params.iterkeys())
+            where_names = sorted(params.keys())
+            set_names = sorted(params.keys())
             set_names.append("updated_at")
             update_params = dict(params)
             update_params["updated_at"] = changestamp
@@ -221,6 +222,30 @@ class Group(object):
     def __repr__(self):
         return "<Group %s \"%s\" \"%s\">" % (
             self.id, self.series.name, self.name)
+
+
+class FileInfo(object):
+
+    @classmethod
+    def _from_db(cls, api, id):
+        with api.db:
+            c = api.db.cursor()
+            rows = c.execute(
+                "select "
+                "file_index as 'index', "
+                "path, "
+                "length "
+                "from file_info "
+                "where id = ?",
+                (id,)).fetchall()
+            rows = tuple(
+                dict(zip((n for n, t in c.getdescription()), r)) for r in rows)
+            return tuple(cls(**row) for row in rows)
+
+    def __init__(self, index=None, path=None, length=None):
+        self.index = index
+        self.path = path
+        self.length = length
 
 
 class TorrentEntry(object):
@@ -268,6 +293,9 @@ class TorrentEntry(object):
                 "create index if not exists torrent_entry_on_group_id "
                 "on torrent_entry (group_id)")
             c.execute(
+                "create index if not exists torrent_entry_on_info_hash "
+                "on torrent_entry (info_hash)")
+            c.execute(
                 "create table if not exists codec ("
                 "id integer primary key, "
                 "name text not null)")
@@ -302,6 +330,23 @@ class TorrentEntry(object):
             c.execute(
                 "create unique index if not exists source_name "
                 "on source (name)")
+
+            c.execute(
+                "create table if not exists file_info ("
+                "id integer not null, "
+                "file_index integer not null, "
+                "path text not null, "
+                "length integer not null, "
+                "updated_at integer not null)")
+            c.execute(
+                "create unique index if not exists file_info_id_index "
+                "on file_info (id, file_index)")
+            c.execute(
+                "create index if not exists file_info_id_index_path "
+                "on file_info (id, file_index, path)")
+            c.execute(
+                "create index if not exists file_info_updated_at "
+                "on file_info (updated_at)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -419,13 +464,13 @@ class TorrentEntry(object):
             }
             insert_params = {"id": self.id, "updated_at": changestamp}
             insert_params.update(params)
-            names = sorted(insert_params.iterkeys())
+            names = sorted(insert_params.keys())
             self.api.db.cursor().execute(
                 "insert or ignore into torrent_entry (%(n)s) values (%(v)s)" %
                 {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
                 insert_params)
-            where_names = sorted(params.iterkeys())
-            set_names = sorted(params.iterkeys())
+            where_names = sorted(params.keys())
+            set_names = sorted(params.keys())
             set_names.append("updated_at")
             update_params = dict(params)
             update_params["updated_at"] = changestamp
@@ -438,12 +483,43 @@ class TorrentEntry(object):
                      for n in where_names)},
                 update_params)
 
+            if self.raw_torrent_cached:
+                ti = self.torrent_object[b"info"]
+                values = []
+                if b"files" in ti:
+                    for idx, fi in enumerate(ti[b"files"]):
+                        length = fi[b"length"]
+                        path_parts = [ti[b"name"]]
+                        path_parts.extend(list(fi[b"path"]))
+                        path = b"/".join(path_parts)
+                        values.append(
+                            (self.id, idx, path, length, changestamp))
+                else:
+                    values.append(
+                        (self.id, 0, ti[b"name"], ti[b"length"], changestamp))
+                self.api.db.cursor().executemany(
+                    "insert or ignore into file_info "
+                    "(id, file_index, path, length, updated_at) values "
+                    "(?, ?, ?, ?, ?)", values)
+
     @property
     def link(self):
         return self.api.mk_url(
             self.api.HOST, "/torrents.php", action="download",
             authkey=self.api.authkey, torrent_pass=self.api.passkey,
             id=self.id)
+
+    def magnet_link(self, include_as=True):
+        qsl = [
+            ("dn", self.release_name),
+            ("xt", "urn:btih:" + self.info_hash),
+            ("xl", self.size)]
+        for url in self.api.announce_urls:
+            qsl.append(("tr", url))
+        if include_as:
+            qsl.append(("as", urllib.quote(self.link)))
+
+        return "magnet:?%s" % "&".join("%s=%s" % (k, v) for k, v in qsl)
 
     @property
     def raw_torrent_path(self):
@@ -453,6 +529,16 @@ class TorrentEntry(object):
     @property
     def raw_torrent_cached(self):
         return os.path.exists(self.raw_torrent_path)
+
+    def _got_raw_torrent(self, raw_torrent):
+        self._raw_torrent = raw_torrent
+        if self.api.store_raw_torrent:
+            if not os.path.exists(os.path.dirname(self.raw_torrent_path)):
+                os.makedirs(os.path.dirname(self.raw_torrent_path))
+            with open(self.raw_torrent_path, mode="wb") as f:
+                f.write(self._raw_torrent)
+        self.serialize()
+        return self._raw_torrent
 
     @property
     def raw_torrent(self):
@@ -467,14 +553,12 @@ class TorrentEntry(object):
             response = self.api.get_url(self.link)
             if response.status_code != requests.codes.ok:
                 raise APIError(response.text, response.status_code)
-            self._raw_torrent = response.content
-            if self.api.store_raw_torrent:
-                if not os.path.exists(os.path.dirname(self.raw_torrent_path)):
-                    os.makedirs(os.path.dirname(self.raw_torrent_path))
-                with open(self.raw_torrent_path, mode="wb") as f:
-                    f.write(self._raw_torrent)
-            self.serialize()
+            self._got_raw_torrent(response.content)
             return self._raw_torrent
+
+    @property
+    def file_info_cached(self):
+        return FileInfo._from_db(self.api, self.id)
 
     @property
     def torrent_object(self):
@@ -734,6 +818,10 @@ class API(object):
         query = urlparse.urlencode(qdict)
         return urlparse.urlunparse((
             self.SCHEME, host, path, None, query, None))
+
+    @property
+    def announce_urls(self):
+        yield self.mk_url("landof.tv", "%s/announce" % self.passkey)
 
     @property
     def endpoint(self):
@@ -1007,7 +1095,7 @@ class API(object):
             CrudResult.TYPE_SERIES: "series"}
 
         if type is None:
-            candidates = type_to_table.iteritems()
+            candidates = type_to_table.items()
         else:
             candidates = ((type, type_to_table[type]),)
 
