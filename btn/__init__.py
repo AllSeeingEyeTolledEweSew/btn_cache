@@ -922,6 +922,10 @@ class API(object):
 
     def get_changestamp(self):
         with self.db:
+            # Workaround so savepoint behaves like begin immediate
+            self.db.cursor().execute(
+                "insert or ignore into global (name, value) values (?, ?)",
+                ("changestamp", 0))
             try:
                 changestamp = int(self.get_global("changestamp") or 0)
             except ValueError:
