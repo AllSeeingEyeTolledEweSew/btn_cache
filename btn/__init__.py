@@ -237,15 +237,30 @@ class FileInfo(object):
                 "length "
                 "from file_info "
                 "where id = ?",
-                (id,)).fetchall()
-            rows = tuple(
-                dict(zip((n for n, t in c.getdescription()), r)) for r in rows)
-            return tuple(cls(**row) for row in rows)
+                (id,))
+            return (cls(index=r[0], path=r[1], length=r[2]) for r in rows)
+
+    @classmethod
+    def _from_tobj(cls, tobj):
+        ti = tobj[b"info"]
+        values = []
+        if b"files" in ti:
+            for idx, fi in enumerate(ti[b"files"]):
+                length = fi[b"length"]
+                path_parts = [ti[b"name"]]
+                path_parts.extend(list(fi[b"path"]))
+                path = b"/".join(path_parts)
+                yield cls(index=idx, path=path, length=length)
+        else:
+            yield cls(index=0, path=ti[b"name"], length=ti[b"length"])
 
     def __init__(self, index=None, path=None, length=None):
         self.index = index
         self.path = path
         self.length = length
+
+    def __repr__(self):
+        return "<FileInfo %s \"%s\">" % (self.index, self.path)
 
 
 class TorrentEntry(object):
@@ -407,6 +422,9 @@ class TorrentEntry(object):
         self._raw_torrent = None
 
     def serialize(self, changestamp=None):
+        file_info = None
+        if self.raw_torrent_cached and not any(self.file_info_cached):
+            file_info = list(FileInfo._from_tobj(self.torrent_object))
         with self.api.db:
             self.api.db.cursor().execute(
                 "insert or ignore into codec (name) values (?)", (self.codec,))
@@ -483,20 +501,10 @@ class TorrentEntry(object):
                      for n in where_names)},
                 update_params)
 
-            if self.raw_torrent_cached:
-                ti = self.torrent_object[b"info"]
-                values = []
-                if b"files" in ti:
-                    for idx, fi in enumerate(ti[b"files"]):
-                        length = fi[b"length"]
-                        path_parts = [ti[b"name"]]
-                        path_parts.extend(list(fi[b"path"]))
-                        path = b"/".join(path_parts)
-                        values.append(
-                            (self.id, idx, path, length, changestamp))
-                else:
-                    values.append(
-                        (self.id, 0, ti[b"name"], ti[b"length"], changestamp))
+            if file_info:
+                values = [
+                    (self.id, fi.index, fi.path, fi.length, changestamp)
+                    for fi in file_info]
                 self.api.db.cursor().executemany(
                     "insert or ignore into file_info "
                     "(id, file_index, path, length, updated_at) values "
@@ -1020,10 +1028,8 @@ class API(object):
         for tj in sr_json.get("torrents", {}).values():
             te = self._torrent_entry_from_json(tj)
             tes.append(te)
-        with self.db:
-            changestamp = self.get_changestamp()
-            for te in tes:
-                te.serialize(changestamp=changestamp)
+        for te in tes:
+            te.serialize()
         tes= sorted(tes, key=lambda te: -te.id)
         return SearchResult(sr_json["results"], tes)
 
