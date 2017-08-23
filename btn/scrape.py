@@ -8,6 +8,34 @@ def log():
     return logging.getLogger(__name__)
 
 
+def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
+    ids = sorted((te.id for te in sr.torrents), key=lambda i: -i)
+    is_end = offset + len(ids) >= sr.results
+
+    if ids:
+        if changestamp is None:
+            changestamp = api.get_changestamp()
+        c = api.db.cursor()
+        if is_end:
+            c.execute(
+                "update torrent_entry set deleted = 1, updated_at = ? "
+                "where id < ? and not deleted",
+                (changestamp, ids[-1]))
+        c.execute(
+            "create temp table ids (id integer not null primary key)")
+        c.executemany(
+            "insert into temp.ids (id) values (?)",
+            [(id,) for id in ids])
+        c.execute(
+            "update torrent_entry set deleted = 1, updated_at = ? "
+            "where not deleted and id < ? and id > ? and "
+            "id not in (select id from temp.ids)",
+            (changestamp, ids[0], ids[-1]))
+        c.execute("drop table temp.ids")
+
+    return ids, is_end
+
+
 class Scraper(object):
 
     def __init__(self, api):
@@ -42,30 +70,8 @@ class Scraper(object):
         else:
             self.api.set_global(key, str(value))
 
-    def update_scrape_results_unlocked(self, offset, sr):
-        done = False
-        ids = [te.id for te in sr.torrents]
-        is_end = offset + len(ids) >= sr.results
-
-        if ids:
-            changestamp = self.api.get_changestamp()
-            c = self.api.db.cursor()
-            if is_end:
-                c.execute(
-                    "update torrent_entry set deleted = 1, updated_at = ? "
-                    "where id < ? and not deleted",
-                    (changestamp, ids[-1]))
-            c.execute(
-                "create temp table ids (id integer not null primary key)")
-            c.executemany(
-                "insert into temp.ids (id) values (?)",
-                [(id,) for id in ids])
-            c.execute(
-                "update torrent_entry set deleted = 1, updated_at = ? "
-                "where not deleted and id < ? and id > ? and "
-                "id not in (select id from temp.ids)",
-                (changestamp, ids[0], ids[-1]))
-            c.execute("drop table temp.ids")
+    def update_scrape_results_locked(self, offset, sr):
+        ids, is_end = apply_contiguous_results_locked(self.api, offset, sr)
 
         last_scraped = self.get_int("last_scraped")
         oldest = self.get_int("scrape_oldest")
@@ -74,6 +80,7 @@ class Scraper(object):
         if newest is None or (ids and ids[0] >= newest):
             newest = ids[0]
 
+        done = False
         # Ensure we got a good page overlap.
         if oldest is None or (ids and ids[0] >= oldest):
             if is_end:
@@ -114,7 +121,7 @@ class Scraper(object):
                 log().debug("No current scrape.")
                 c = self.api.db.cursor().execute(
                     "select id from torrent_entry where not deleted "
-                    "order by id desc")
+                    "order by id desc limit 1000")
                 db_ids = [id for id, in c]
 
         if offset is None:
@@ -136,7 +143,7 @@ class Scraper(object):
         sr = self.api.getTorrents(results=2**31, offset=offset)
 
         with self.api.db:
-            return self.update_scrape_results_unlocked(offset, sr)
+            return self.update_scrape_results_locked(offset, sr)
 
     def scrape(self):
         while True:
