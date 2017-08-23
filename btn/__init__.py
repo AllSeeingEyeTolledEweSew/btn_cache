@@ -702,6 +702,11 @@ class APIError(Error):
         self.code = code
 
 
+class WouldBlock(Error):
+
+    pass
+
+
 class API(object):
 
     SCHEME = "https"
@@ -854,7 +859,10 @@ class API(object):
     def get_url(self, url, **kwargs):
         return self.call_url(requests.get, url, **kwargs)
 
-    def call_api(self, method, *params):
+    def call_api(self, method, *params, leave_tokens=None,
+                 block_on_token=None):
+        if block_on_token is None:
+            block_on_token = True
         params = [self.key] + list(params)
         data = json_lib.dumps({
             "jsonrpc": "2.0",
@@ -863,7 +871,13 @@ class API(object):
             "params": params})
 
         if self.api_token_bucket:
-            self.api_token_bucket.consume(1)
+            if block_on_token:
+                self.api_token_bucket.consume(1, leave=leave_tokens)
+            else:
+                success, _, _ = self.api_token_bucket.try_consume(
+                    1, leave=leave_tokens)
+                if not success:
+                    raise WouldBlock()
 
         response = requests.post(
             self.endpoint, headers={"Content-Type": "application/json"},
@@ -919,8 +933,11 @@ class API(object):
     def _from_db(self, id):
         return TorrentEntry._from_db(self, id)
 
-    def getTorrentsJson(self, results=10, offset=0, **kwargs):
-        return self.call_api("getTorrents", kwargs, results, offset)
+    def getTorrentsJson(self, results=10, offset=0, leave_tokens=None,
+                        block_on_token=None, **kwargs):
+        return self.call_api(
+            "getTorrents", kwargs, results, offset, leave_tokens=leave_tokens,
+            block_on_token=block_on_token)
 
     def _torrent_entry_from_json(self, tj):
         series = Series(
@@ -1043,8 +1060,10 @@ class API(object):
                 break
             offset += len(sr.torrents)
 
-    def getTorrentByIdJson(self, id):
-        return self.call_api("getTorrentById", id)
+    def getTorrentByIdJson(self, id, leave_tokens=None, block_on_token=None):
+        return self.call_api(
+            "getTorrentById", id, leave_tokens=leave_tokens,
+            block_on_token=block_on_token)
 
     def getTorrentByIdCached(self, id):
         return self._from_db(id)
@@ -1057,8 +1076,11 @@ class API(object):
                 te.serialize()
         return te
 
-    def getUserSnatchlistJson(self, results=10, offset=0):
-        return self.call_api("getUserSnatchlist", results, offset)
+    def getUserSnatchlistJson(self, results=10, offset=0, leave_tokens=None,
+                              block_on_token=None):
+        return self.call_api(
+            "getUserSnatchlist", results, offset, leave_tokens=None,
+            block_on_token=block_on_token)
 
     def _user_info_from_json(self, j):
         return UserInfo(
@@ -1072,8 +1094,10 @@ class API(object):
             upload=int(j["Upload"]),
             uploads_snatched=int(j["UploadsSnatched"]), username=j["Username"])
 
-    def userInfoJson(self):
-        return self.call_api("userInfo")
+    def userInfoJson(self, leave_tokens=None, block_on_token=None):
+        return self.call_api(
+            "userInfo", leave_tokes=leave_tokens,
+            block_on_token=block_on_token)
 
     def userInfoCached(self):
         return UserInfo._from_db(self)
