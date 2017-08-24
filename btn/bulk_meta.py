@@ -299,7 +299,8 @@ class DelugeBulkMeta(object):
         if ts is None:
             ts = -1
         c = self.api.db.cursor().execute(
-            "select torrent_entry.id, torrent_entry.seeders, "
+            "select torrent_entry.id, "
+            "torrent_entry.seeders + torrent_entry.leechers, "
             "torrent_entry.updated_at "
             "from torrent_entry "
             "left join file_info on torrent_entry.id = file_info.id "
@@ -313,8 +314,8 @@ class DelugeBulkMeta(object):
     def scrape(self, ts):
         next_ts = ts or -1
         try:
-            for id, seeders, id_ts in self.get_unfilled_ids(ts=ts):
-                self.queue.put((-seeders, id))
+            for id, peers, id_ts in self.get_unfilled_ids(ts=ts):
+                self.queue.put((-peers, id))
                 next_ts = max(next_ts, id_ts)
         except:
             log().exception("while scraping")
