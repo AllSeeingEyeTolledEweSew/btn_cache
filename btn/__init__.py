@@ -1,10 +1,12 @@
 #!/usr/bin/python
 
+import contextlib
 import json as json_lib
 import logging
 import os
 import re
 import threading
+import time
 import urllib
 import urlparse
 
@@ -34,6 +36,18 @@ TORRENT_HISTORY_FRACTION = 0.1
 
 def log():
     return logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def begin(db, mode="immediate"):
+    db.cursor().execute("begin %s" % mode)
+    try:
+        yield
+    except:
+        db.cursor().execute("rollback")
+        raise
+    else:
+        db.cursor().execute("commit")
 
 
 class Series(object):
@@ -809,7 +823,7 @@ class API(object):
         if not os.path.exists(os.path.dirname(self.db_path)):
             os.makedirs(os.path.dirname(self.db_path))
         db = apsw.Connection(self.db_path)
-        db.setbusytimeout(5000)
+        db.setbusytimeout(120000)
         self._local.db = db
         with db:
             Series._create_schema(self)
@@ -1049,8 +1063,17 @@ class API(object):
         for tj in sr_json.get("torrents", {}).values():
             te = self._torrent_entry_from_json(tj)
             tes.append(te)
-        for te in tes:
-            te.serialize()
+        while True:
+            try:
+                with begin(self.db):
+                    for te in tes:
+                        te.serialize()
+            except apsw.BusyError:
+                log().warning(
+                    "BusyError while trying to serialize, will retry")
+                time.sleep(1)
+            else:
+                break
         tes= sorted(tes, key=lambda te: -te.id)
         return SearchResult(sr_json["results"], tes)
 
