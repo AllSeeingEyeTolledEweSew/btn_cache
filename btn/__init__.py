@@ -559,7 +559,15 @@ class TorrentEntry(object):
                 os.makedirs(os.path.dirname(self.raw_torrent_path))
             with open(self.raw_torrent_path, mode="wb") as f:
                 f.write(self._raw_torrent)
-        self.serialize()
+        while True:
+            try:
+                with begin(self.api.db):
+                    self.serialize()
+            except apsw.BusyError:
+                log().warning(
+                    "BusyError while trying to serialize, will retry")
+            else:
+                break
         return self._raw_torrent
 
     @property
@@ -1071,7 +1079,6 @@ class API(object):
             except apsw.BusyError:
                 log().warning(
                     "BusyError while trying to serialize, will retry")
-                time.sleep(1)
             else:
                 break
         tes= sorted(tes, key=lambda te: -te.id)
