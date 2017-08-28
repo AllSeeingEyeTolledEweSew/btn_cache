@@ -21,6 +21,8 @@ class DelugeBulkMeta(object):
     DEFAULT_UPDATER_SLEEP = 1
     DEFAULT_UPDATER_TARGET = 10
 
+    SCRAPE_RESET_TIME = 3600
+
     NULL_SAVE_PATH = b"/dev/null"
 
     def __init__(self, api, client, target=None, metadata_timeout=None,
@@ -49,6 +51,7 @@ class DelugeBulkMeta(object):
         self.status = {}
         self.cv = threading.Condition(self.lock)
         self.active_count = -1
+        self.qcv = threading.Condition()
         self.queue = Queue.PriorityQueue()
 
     def announce_url(self):
@@ -269,10 +272,14 @@ class DelugeBulkMeta(object):
         return False
 
     def try_feed_one(self):
-        try:
-            prio, id = self.queue.get(True, 1)
-        except Queue.Empty:
-            return
+        with self.qcv:
+            while True:
+                try:
+                    prio, id = self.queue.get_nowait()
+                except Queue.Empty:
+                    self.qcv.wait()
+                else:
+                    break
 
         with self.cv:
             while self.active_count < 0 or self.active_count >= self.target:
@@ -284,7 +291,9 @@ class DelugeBulkMeta(object):
             log().exception("while adding %s", id)
         else:
             if retry:
-                self.queue.put((prio, id))
+                with self.qcv:
+                    self.queue.put((prio, id))
+                    self.qcv.notify()
 
     def feeder(self):
         try:
@@ -313,18 +322,40 @@ class DelugeBulkMeta(object):
 
     def scrape(self, ts):
         next_ts = ts or -1
+
+        id_to_peers = {}
         try:
             for id, peers, id_ts in self.get_unfilled_ids(ts=ts):
-                self.queue.put((-peers, id))
+                id_to_peers[id] = peers
                 next_ts = max(next_ts, id_ts)
         except:
             log().exception("while scraping")
+            return ts
+
+        if id_to_peers:
+            with self.qcv:
+                while True:
+                    try:
+                        prio, id = self.queue.get_nowait()
+                    except Queue.Empty:
+                        break
+                    peers = -prio
+                    if id not in id_to_peers:
+                        id_to_peers[id] = peers
+                for id, peers in id_to_peers.items():
+                    self.queue.put((-peers, id))
+                self.qcv.notifyAll()
+
         return next_ts
 
     def scraper(self):
+        last_reset = time.time()
         ts = None
         try:
             while True:
+                if time.time() - last_reset > self.SCRAPE_RESET_TIME:
+                    last_reset = time.time()
+                    ts = None
                 ts = self.scrape(ts)
                 time.sleep(1)
         except:
