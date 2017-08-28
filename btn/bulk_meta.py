@@ -190,7 +190,7 @@ class DelugeBulkMeta(object):
             b"TrackerErrorEvent", self.got_tracker_error)
 
     def update_status(self):
-        log().info("full status update from deluge")
+        log().debug("full status update from deluge")
         status = self.client.call(
             "core.get_torrents_status", {}, [
                 b"save_path", b"trackers", b"has_metadata", b"hash",
@@ -203,13 +203,13 @@ class DelugeBulkMeta(object):
                     [s for s in status.values() if self.owned_by_us(s)])
                 self.cv.notifyAll()
             statuses = list(status.values())
-        log().info("cleaning up successful torrents")
+        log().debug("cleaning up successful torrents")
         for s in statuses:
             if not s[b"has_metadata"]:
                 continue
             self.maybe_update(s)
 
-        log().info("cleaning up unregistered torrents")
+        log().debug("cleaning up unregistered torrents")
         with self.lock:
             statuses = list(self.status.values())
         for s in statuses:
@@ -217,7 +217,7 @@ class DelugeBulkMeta(object):
                 continue
             self.maybe_update(s)
 
-        log().info("finding at most %s to update", self.updater_target)
+        log().debug("finding at most %s to update", self.updater_target)
         with self.lock:
             statuses = list(self.status.values())
         updated = 0
