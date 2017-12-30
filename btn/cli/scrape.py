@@ -9,7 +9,7 @@ from btn import scrape as btn_scrape
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--verbose", "-v", action="count")
-    parser.add_argument("--cache_path", "-c")
+    btn.add_arguments(parser, create_group=True)
 
     args = parser.parse_args()
 
@@ -23,6 +23,6 @@ def main():
         format="%(asctime)s %(levelname)s %(threadName)s "
         "%(filename)s:%(lineno)d %(message)s")
 
-    api = btn.API(cache_path=args.cache_path)
+    api = btn.API.from_args(parser, args)
     scraper = btn_scrape.Scraper(api)
     scraper.scrape()

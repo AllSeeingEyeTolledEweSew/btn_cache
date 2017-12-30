@@ -729,6 +729,17 @@ class WouldBlock(Error):
     pass
 
 
+def add_arguments(parser, create_group=True):
+    if create_group:
+        target = parser.add_argument_group("BTN API options")
+    else:
+        target = parser
+
+    target.add_argument("--btn_cache_path", type=str)
+
+    return target
+
+
 class API(object):
 
     SCHEME = "https"
@@ -743,6 +754,10 @@ class API(object):
 
     DEFAULT_API_TOKEN_RATE = 150
     DEFAULT_API_TOKEN_PERIOD = 3600
+
+    @classmethod
+    def from_args(cls, parser, args):
+        return cls(cache_path=args.btn_cache_path)
 
     def __init__(self, key=None, passkey=None, authkey=None,
                  api_token_bucket=None, token_bucket=None, cache_path=None,
