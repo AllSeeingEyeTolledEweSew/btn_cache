@@ -897,9 +897,11 @@ class API(object):
         return self.call_url(requests.get, url, **kwargs)
 
     def call_api(self, method, *params, leave_tokens=None,
-                 block_on_token=None):
+                 block_on_token=None, consume_token=None):
         if block_on_token is None:
             block_on_token = True
+        if consume_token is None:
+            consume_token = True
         params = [self.key] + list(params)
         data = json_lib.dumps({
             "jsonrpc": "2.0",
@@ -907,7 +909,7 @@ class API(object):
             "method": method,
             "params": params})
 
-        if self.api_token_bucket:
+        if consume_token and self.api_token_bucket:
             if block_on_token:
                 self.api_token_bucket.consume(1, leave=leave_tokens)
             else:
@@ -975,10 +977,10 @@ class API(object):
         return TorrentEntry._from_db(self, id)
 
     def getTorrentsJson(self, results=10, offset=0, leave_tokens=None,
-                        block_on_token=None, **kwargs):
+                        block_on_token=None, consume_token=None, **kwargs):
         return self.call_api(
             "getTorrents", kwargs, results, offset, leave_tokens=leave_tokens,
-            block_on_token=block_on_token)
+            block_on_token=block_on_token, consume_token=consume_token)
 
     def _torrent_entry_from_json(self, tj):
         series = Series(
@@ -1109,10 +1111,11 @@ class API(object):
                 break
             offset += len(sr.torrents)
 
-    def getTorrentByIdJson(self, id, leave_tokens=None, block_on_token=None):
+    def getTorrentByIdJson(self, id, leave_tokens=None, block_on_token=None,
+                           consume_token=None):
         return self.call_api(
             "getTorrentById", id, leave_tokens=leave_tokens,
-            block_on_token=block_on_token)
+            block_on_token=block_on_token, consume_token=consume_token)
 
     def getTorrentByIdCached(self, id):
         return self._from_db(id)
@@ -1126,10 +1129,10 @@ class API(object):
         return te
 
     def getUserSnatchlistJson(self, results=10, offset=0, leave_tokens=None,
-                              block_on_token=None):
+                              block_on_token=None, consume_token=None):
         return self.call_api(
-            "getUserSnatchlist", results, offset, leave_tokens=None,
-            block_on_token=block_on_token)
+            "getUserSnatchlist", results, offset, leave_tokens=leave_tokens,
+            block_on_token=block_on_token, consume_token=consume_token)
 
     def _user_info_from_json(self, j):
         return UserInfo(
@@ -1143,10 +1146,11 @@ class API(object):
             upload=int(j["Upload"]),
             uploads_snatched=int(j["UploadsSnatched"]), username=j["Username"])
 
-    def userInfoJson(self, leave_tokens=None, block_on_token=None):
+    def userInfoJson(self, leave_tokens=None, block_on_token=None,
+                     consume_token=None):
         return self.call_api(
             "userInfo", leave_tokes=leave_tokens,
-            block_on_token=block_on_token)
+            block_on_token=block_on_token, consume_token=consume_token)
 
     def userInfoCached(self):
         return UserInfo._from_db(self)
