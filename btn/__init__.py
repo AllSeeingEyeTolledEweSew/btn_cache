@@ -13,7 +13,7 @@ import urlparse
 import apsw
 import better_bencode
 import requests
-import token_bucket as token_bucket_lib
+import tbucket
 import yaml
 
 
@@ -806,13 +806,13 @@ class API(object):
         if token_bucket is not None:
             self.token_bucket = token_bucket
         else:
-            self.token_bucket = token_bucket_lib.TokenBucket(
+            self.token_bucket = tbucket.TokenBucket(
                 self.db_path, "web:" + self.key, self.token_rate,
                 self.token_period)
         if api_token_bucket is not None:
             self.api_token_bucket = api_token_bucket
         else:
-            self.api_token_bucket = token_bucket_lib.ScheduledTokenBucket(
+            self.api_token_bucket = tbucket.ScheduledTokenBucket(
                 self.db_path, self.key, self.api_token_rate,
                 self.api_token_period)
 

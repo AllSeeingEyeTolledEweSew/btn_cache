@@ -22,7 +22,7 @@ setup(
         "better-bencode>=0.2.1",
         "PyYAML>=3.12",
         "requests>=2.12.3",
-        "token_bucket>=0.1.0",
+        "tbucket>=0.1.0",
         "feedparser>=5.2.1",
     ],
     entry_points={
