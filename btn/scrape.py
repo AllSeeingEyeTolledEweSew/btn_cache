@@ -155,7 +155,7 @@ class OpportunisticUpdater(object):
         if self.threads:
             return
         for i in range(self.num_threads):
-            t = threading.Thread(target=self.run)
+            t = threading.Thread(target=self.run, daemon=True)
             t.start()
             self.threads.append(t)
 
@@ -171,8 +171,9 @@ class Scraper(object):
     KEY_OLDEST = "scrape_oldest"
     KEY_NEWEST = "scrape_newest"
 
-    def __init__(self, api):
+    def __init__(self, api, once=False):
         self.api = api
+        self.once = once
 
     def get_feed_ids(self):
         user = self.api.userInfoCached()
@@ -266,7 +267,19 @@ class Scraper(object):
             return self.update_scrape_results_locked(offset, sr)
 
     def scrape(self):
-        while True:
-            done = self.scrape_step()
-            if done:
-                break
+        try:
+            while True:
+                try:
+                    done = self.scrape_step()
+                except KeyboardInterrupt:
+                    raise
+                except:
+                    log().exception("fatal error")
+                    done = True
+                if done:
+                    if self.once:
+                        break
+                    else:
+                        time.sleep(60)
+        finally:
+            log().debug("shutting down")
