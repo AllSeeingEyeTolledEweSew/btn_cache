@@ -918,6 +918,7 @@ class API(object):
                 if not success:
                     raise WouldBlock()
 
+        call_time = time.time()
         response = requests.post(
             self.endpoint, headers={"Content-Type": "application/json"},
             data=data)
@@ -938,7 +939,7 @@ class API(object):
             code = error["code"]
             if code == APIError.CODE_CALL_LIMIT_EXCEEDED:
                 if self.api_token_bucket:
-                    self.api_token_bucket.set(0)
+                    self.api_token_bucket.set(0, last=call_time)
             raise APIError(message, code)
 
         return response["result"]
