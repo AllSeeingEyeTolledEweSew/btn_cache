@@ -3,15 +3,20 @@ import logging
 import sys
 
 import btn
-from btn import opportunistic_update as btn_opportunistic_update
+from btn import scrape as btn_scrape
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--verbose", "-v", action="count")
-    parser.add_argument("--cache_path", "-c")
-    parser.add_argument("--target_tokens", "-t", type=int, default=0)
-    parser.add_argument("--num_threads", "-n", type=int, default=10)
+    parser.add_argument("--once", action="store_true")
+    parser.add_argument(
+        "--target_tokens", "-t", type=int,
+        default=btn_scrape.OpportunisticUpdater.DEFAULT_TARGET_TOKENS)
+    parser.add_argument(
+        "--num_threads", "-n", type=int,
+        default=btn_scrape.OpportunisticUpdater.DEFAULT_NUM_THREADS)
+    btn.add_arguments(parser)
 
     args = parser.parse_args()
 
@@ -25,8 +30,9 @@ def main():
         format="%(asctime)s %(levelname)s %(threadName)s "
         "%(filename)s:%(lineno)d %(message)s")
 
-    api = btn.API(cache_path=args.cache_path)
-    updater = btn_opportunistic_update.OpportunisticUpdater(
-        api, target_tokens=args.target_tokens, num_threads=args.num_threads)
+    api = btn.API.from_args(parser, args)
+    updater = btn_scrape.OpportunisticUpdater(
+        api, target_tokens=args.target_tokens, num_threads=args.num_threads,
+        once=args.once)
     updater.start()
     updater.join()
