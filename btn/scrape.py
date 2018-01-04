@@ -81,25 +81,16 @@ class OpportunisticUpdater(object):
 
     def update_step(self):
         if self.once:
-            tokens, _ = self.api.api_token_bucket.peek()
+            tokens, _, _ = self.api.api_token_bucket.peek()
             with self.lock:
                 if self.tokens is not None and tokens > self.tokens:
                     log().info("Tokens refilled, quitting")
                     return True
                 self.tokens = tokens
 
-        if self.once:
-            target_tokens = self.target_tokens
-        else:
-            now = time.time()
-            next_refill = self.api.api_token_bucket.get_next_refill(now)
-            rate = self.api.api_token_bucket.rate
-            period = self.api.api_token_bucket.period
-            target_tokens = self.target_tokens + int(
-                (rate - self.target_tokens) / period * (next_refill - now))
-            log().debug("Target tokens: %s", target_tokens)
+        target_tokens = self.target_tokens
 
-        success, _, _ = self.api.api_token_bucket.try_consume(
+        success, _, _, _ = self.api.api_token_bucket.try_consume(
             1, leave=target_tokens)
         if not success:
             return True

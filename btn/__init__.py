@@ -812,7 +812,7 @@ class API(object):
         if api_token_bucket is not None:
             self.api_token_bucket = api_token_bucket
         else:
-            self.api_token_bucket = tbucket.ScheduledTokenBucket(
+            self.api_token_bucket = tbucket.TimeSeriesTokenBucket(
                 self.db_path, self.key, self.api_token_rate,
                 self.api_token_period)
 
@@ -913,7 +913,7 @@ class API(object):
             if block_on_token:
                 self.api_token_bucket.consume(1, leave=leave_tokens)
             else:
-                success, _, _ = self.api_token_bucket.try_consume(
+                success, _, _, _ = self.api_token_bucket.try_consume(
                     1, leave=leave_tokens)
                 if not success:
                     raise WouldBlock()
@@ -938,8 +938,13 @@ class API(object):
             message = error["message"]
             code = error["code"]
             if code == APIError.CODE_CALL_LIMIT_EXCEEDED:
+                def fill(_, as_of, n):
+                    period = self.api_token_bucket.period
+                    start = as_of - period
+                    return [
+                        start + period * (i + 1) / (n + 1) for i in range(n)]
                 if self.api_token_bucket:
-                    self.api_token_bucket.set(0, last=call_time)
+                    self.api_token_bucket.set(0, as_of=call_time, fill=fill)
             raise APIError(message, code)
 
         return response["result"]
