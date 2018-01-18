@@ -299,6 +299,7 @@ class TorrentFileScraper(object):
         self.api = api
         self.reset_time = reset_time
 
+        self.thread = None
         self.ts = None
         self.queue = None
         self.last_reset_time = None
@@ -339,7 +340,28 @@ class TorrentFileScraper(object):
         return id
 
     def run(self):
-        while True:
-            id = self.step()
-            if id is None:
-                time.sleep(1)
+        try:
+            while True:
+                try:
+                    id = self.step()
+                except KeyboardInterrupt:
+                    raise
+                except:
+                    log().exception("during scrape")
+                    time.sleep(60)
+                else:
+                    if id is None:
+                        time.sleep(1)
+        finally:
+            log().debug("shutting down")
+
+    def start(self):
+        if self.thread:
+            return
+        t = threading.Thread(target=self.run, daemon=True)
+        t.start()
+        self.thread = t
+
+    def join(self):
+        if self.thread:
+            self.thread.join()
