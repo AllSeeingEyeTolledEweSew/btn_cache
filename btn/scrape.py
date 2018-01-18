@@ -132,7 +132,7 @@ class OpportunisticUpdater(object):
                 try:
                     done = self.update_step()
                 except:
-                    log().exception("fatal error")
+                    log().exception("during update")
                     done = True
                 if done:
                     if self.once:
@@ -265,7 +265,7 @@ class Scraper(object):
                 except KeyboardInterrupt:
                     raise
                 except:
-                    log().exception("fatal error")
+                    log().exception("during scrape")
                     done = True
                 if done:
                     if self.once:
