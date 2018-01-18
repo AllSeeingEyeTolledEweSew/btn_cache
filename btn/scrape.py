@@ -286,3 +286,60 @@ class MetadataTipScraper(object):
     def join(self):
         if self.thread:
             self.thread.join()
+
+
+class TorrentFileScraper(object):
+
+    DEFAULT_RESET_TIME = 3600
+
+    def __init__(self, api, reset_time=None):
+        if reset_time is None:
+            reset_time = self.DEFAULT_RESET_TIME
+
+        self.api = api
+        self.reset_time = reset_time
+
+        self.ts = None
+        self.queue = None
+        self.last_reset_time = None
+
+    def get_unfilled_ids(self):
+        c = self.api.db.cursor().execute(
+            "select torrent_entry.id, torrent_entry.updated_at "
+            "from torrent_entry "
+            "left join file_info on torrent_entry.id = file_info.id "
+            "where file_info.id is null "
+            "and torrent_entry.deleted = 0 "
+            "and torrent_entry.updated_at > ? "
+            "order by torrent_entry.updated_at", (self.ts,))
+        for r in c:
+            yield r
+
+    def step(self):
+        now = time.time()
+        if (self.last_reset_time is None or
+                now - self.last_reset_time > self.reset_time):
+            self.ts = -1
+            self.queue = Queue.PriorityQueue()
+            self.last_reset_time = now
+
+        for id, id_ts in self.get_unfilled_ids():
+            self.ts = max(self.ts, id_ts)
+            self.queue.put((-id, id))
+
+        try:
+            _, id = self.queue.get_nowait()
+        except Queue.Empty:
+            id = None
+
+        if id is not None:
+            te = self.api.getTorrentByIdCached(id)
+            _ = te.raw_torrent
+
+        return id
+
+    def run(self):
+        while True:
+            id = self.step()
+            if id is None:
+                time.sleep(1)
