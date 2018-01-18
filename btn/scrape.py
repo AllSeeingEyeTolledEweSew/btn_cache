@@ -165,6 +165,7 @@ class Scraper(object):
     def __init__(self, api, once=False):
         self.api = api
         self.once = once
+        self.thread = None
 
     def get_feed_ids(self):
         user = self.api.userInfoCached()
@@ -257,7 +258,7 @@ class Scraper(object):
         with btn.begin(self.api.db):
             return self.update_scrape_results_locked(offset, sr)
 
-    def scrape(self):
+    def run(self):
         try:
             while True:
                 try:
@@ -274,3 +275,14 @@ class Scraper(object):
                         time.sleep(60)
         finally:
             log().debug("shutting down")
+
+    def start(self):
+        if self.thread:
+            return
+        t = threading.Thread(target=self.run, daemon=True)
+        t.start()
+        self.thread = t
+
+    def join(self):
+        if self.thread:
+            self.thread.join()

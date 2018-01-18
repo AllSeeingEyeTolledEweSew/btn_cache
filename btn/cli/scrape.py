@@ -26,4 +26,4 @@ def main():
 
     api = btn.API.from_args(parser, args)
     scraper = btn_scrape.Scraper(api, once=args.once)
-    scraper.scrape()
+    scraper.run()
