@@ -54,10 +54,10 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
     return ids, is_end
 
 
-class OpportunisticUpdater(object):
+class MetadataScraper(object):
 
-    KEY_OFFSET = "opportunistic_update_next_offset"
-    KEY_RESULTS = "opportunistic_update_last_results"
+    KEY_OFFSET = "scrape_next_offset"
+    KEY_RESULTS = "scrape_last_results"
 
     BLOCK_SIZE = 1000
 
@@ -155,12 +155,12 @@ class OpportunisticUpdater(object):
             t.join()
 
 
-class Scraper(object):
+class MetadataTipScraper(object):
 
-    KEY_LAST = "last_scraped"
-    KEY_OFFSET = "scrape_offset"
-    KEY_OLDEST = "scrape_oldest"
-    KEY_NEWEST = "scrape_newest"
+    KEY_LAST = "tip_last_scraped"
+    KEY_OFFSET = "tip_scrape_offset"
+    KEY_OLDEST = "tip_scrape_oldest"
+    KEY_NEWEST = "tip_scrape_newest"
 
     def __init__(self, api, once=False):
         self.api = api

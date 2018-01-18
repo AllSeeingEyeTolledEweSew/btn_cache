@@ -12,10 +12,10 @@ def main():
     parser.add_argument("--once", action="store_true")
     parser.add_argument(
         "--target_tokens", "-t", type=int,
-        default=btn_scrape.OpportunisticUpdater.DEFAULT_TARGET_TOKENS)
+        default=btn_scrape.MetadataScraper.DEFAULT_TARGET_TOKENS)
     parser.add_argument(
         "--num_threads", "-n", type=int,
-        default=btn_scrape.OpportunisticUpdater.DEFAULT_NUM_THREADS)
+        default=btn_scrape.MetadataScraper.DEFAULT_NUM_THREADS)
     btn.add_arguments(parser)
 
     args = parser.parse_args()
@@ -31,7 +31,7 @@ def main():
         "%(filename)s:%(lineno)d %(message)s")
 
     api = btn.API.from_args(parser, args)
-    updater = btn_scrape.OpportunisticUpdater(
+    updater = btn_scrape.MetadataScraper(
         api, target_tokens=args.target_tokens, num_threads=args.num_threads,
         once=args.once)
     updater.start()

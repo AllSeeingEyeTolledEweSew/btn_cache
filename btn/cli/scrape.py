@@ -25,5 +25,5 @@ def main():
         "%(filename)s:%(lineno)d %(message)s")
 
     api = btn.API.from_args(parser, args)
-    scraper = btn_scrape.Scraper(api, once=args.once)
+    scraper = btn_scrape.MetadataTipScraper(api, once=args.once)
     scraper.run()
