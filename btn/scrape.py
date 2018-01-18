@@ -146,7 +146,8 @@ class MetadataScraper(object):
         if self.threads:
             return
         for i in range(self.num_threads):
-            t = threading.Thread(target=self.run, daemon=True)
+            t = threading.Thread(
+                name="metadata-scraper-%d" % i, target=self.run, daemon=True)
             t.start()
             self.threads.append(t)
 
@@ -279,7 +280,8 @@ class MetadataTipScraper(object):
     def start(self):
         if self.thread:
             return
-        t = threading.Thread(target=self.run, daemon=True)
+        t = threading.Thread(
+            name="metadata-tip-scraper", target=self.run, daemon=True)
         t.start()
         self.thread = t
 
@@ -358,7 +360,8 @@ class TorrentFileScraper(object):
     def start(self):
         if self.thread:
             return
-        t = threading.Thread(target=self.run, daemon=True)
+        t = threading.Thread(
+            name="torrent-file-scraper", target=self.run, daemon=True)
         t.start()
         self.thread = t
 
