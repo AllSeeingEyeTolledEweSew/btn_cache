@@ -1,6 +1,7 @@
 import feedparser
 import logging
 import os
+import Queue
 import threading
 import time
 from urllib import parse as urllib_parse
