@@ -28,7 +28,6 @@ setup(
     entry_points={
         "console_scripts": [
             "btn_scrape = btn.cli.scrape:main",
-            "btn_opportunistic_update = btn.cli.opportunistic_update:main",
         ],
     },
 )
