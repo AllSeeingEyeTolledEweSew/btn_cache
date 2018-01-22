@@ -604,7 +604,7 @@ class UserInfo(object):
     def _create_schema(cls, api):
         with api.db:
             api.db.cursor().execute(
-                "create table if not exists user_info ("
+                "create table if not exists user.user_info ("
                 "id integer primary key, "
                 "bonus integer not null, "
                 "class_name text not null, "
@@ -627,7 +627,7 @@ class UserInfo(object):
     def _from_db(cls, api):
         c = api.db.cursor()
         row = c.execute(
-            "select * from user_info limit 1").fetchone()
+            "select * from user.user_info limit 1").fetchone()
         if not row:
             return None
         row = dict(zip((n for n, t in c.getdescription()), row))
@@ -662,9 +662,9 @@ class UserInfo(object):
     def serialize(self):
         with self.api.db:
             c = self.api.db.cursor()
-            c.execute("delete from user_info")
+            c.execute("delete from user.user_info")
             c.execute(
-                "insert or replace into user_info ("
+                "insert or replace into user.user_info ("
                 "id, bonus, class_name, class_level, download, "
                 "email, enabled, hnr, invites, join_date, "
                 "lumens, paranoia, snatches, title, upload, "
@@ -807,23 +807,29 @@ class API(object):
             self.token_bucket = token_bucket
         else:
             self.token_bucket = tbucket.TokenBucket(
-                self.db_path, "web:" + self.key, self.token_rate,
+                self.user_db_path, "web:" + self.key, self.token_rate,
                 self.token_period)
         if api_token_bucket is not None:
             self.api_token_bucket = api_token_bucket
         else:
             self.api_token_bucket = tbucket.TimeSeriesTokenBucket(
-                self.db_path, self.key, self.api_token_rate,
+                self.user_db_path, self.key, self.api_token_rate,
                 self.api_token_period)
 
         self._local = threading.local()
         self._db = None
 
     @property
-    def db_path(self):
+    def metadata_db_path(self):
         if self.cache_path:
-            return os.path.join(self.cache_path, "cache.db")
-        return none
+            return os.path.join(self.cache_path, "metadata.db")
+        return None
+
+    @property
+    def user_db_path(self):
+        if self.cache_path:
+            return os.path.join(self.cache_path, "user.db")
+        return None
 
     @property
     def config_path(self):
@@ -841,25 +847,27 @@ class API(object):
         db = getattr(self._local, "db", None)
         if db is not None:
             return db
-        if self.db_path is None:
+        if self.metadata_db_path is None:
             return None
-        if not os.path.exists(os.path.dirname(self.db_path)):
-            os.makedirs(os.path.dirname(self.db_path))
-        db = apsw.Connection(self.db_path)
+        if not os.path.exists(os.path.dirname(self.metadata_db_path)):
+            os.makedirs(os.path.dirname(self.metadata_db_path))
+        db = apsw.Connection(self.metadata_db_path)
         db.setbusytimeout(120000)
         self._local.db = db
+        c = db.cursor()
+        c.execute(
+            "attach database ? as user", (self.user_db_path,))
         with db:
             Series._create_schema(self)
             Group._create_schema(self)
             TorrentEntry._create_schema(self)
             UserInfo._create_schema(self)
-            c = db.cursor()
             c.execute(
-                "create table if not exists global ("
+                "create table if not exists user.global ("
                 "  name text not null,"
                 "  value text not null)")
             c.execute(
-                "create unique index if not exists global_name "
+                "create unique index if not exists user.global_name "
                 "on global (name)")
         c.execute("pragma journal_mode=wal").fetchall()
         return db
@@ -951,25 +959,27 @@ class API(object):
 
     def get_global(self, name):
         row = self.db.cursor().execute(
-            "select value from global where name = ?", (name,)).fetchone()
+            "select value from user.global where name = ?", (name,)).fetchone()
         return row[0] if row else None
 
     def set_global(self, name, value):
         with self.db:
             self.db.cursor().execute(
-                "insert or replace into global (name, value) values (?, ?)",
+                "insert or replace into user.global (name, value) "
+                "values (?, ?)",
                 (name, value))
 
     def delete_global(self, name):
         with self.db:
             self.db.cursor().execute(
-                "delete from global where name = ?", (name,))
+                "delete from user.global where name = ?", (name,))
 
     def get_changestamp(self):
         with self.db:
             # Workaround so savepoint behaves like begin immediate
             self.db.cursor().execute(
-                "insert or ignore into global (name, value) values (?, ?)",
+                "insert or ignore into user.global (name, value) "
+                "values (?, ?)",
                 ("changestamp", 0))
             try:
                 changestamp = int(self.get_global("changestamp") or 0)

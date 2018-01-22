@@ -121,7 +121,7 @@ class MetadataScraper(object):
             else:
                 raise
 
-        with self.api.db:
+        with btn.begin(self.api.db):
             set_int(self.api, self.KEY_RESULTS, sr.results)
             apply_contiguous_results_locked(self.api, offset, sr)
 
