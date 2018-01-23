@@ -38,18 +38,6 @@ def log():
     return logging.getLogger(__name__)
 
 
-@contextlib.contextmanager
-def begin(db, mode="immediate"):
-    db.cursor().execute("begin %s" % mode)
-    try:
-        yield
-    except:
-        db.cursor().execute("rollback")
-        raise
-    else:
-        db.cursor().execute("commit")
-
-
 class Series(object):
 
     @classmethod
@@ -561,7 +549,7 @@ class TorrentEntry(object):
                 f.write(self._raw_torrent)
         while True:
             try:
-                with begin(self.api.db):
+                with self.api.begin():
                     self.serialize()
             except apsw.BusyError:
                 log().warning(
@@ -872,6 +860,17 @@ class API(object):
         c.execute("pragma journal_mode=wal").fetchall()
         return db
 
+    @contextlib.contextmanager
+    def begin(self, mode="immediate"):
+        self.db.cursor().execute("begin %s" % mode)
+        try:
+            yield
+        except:
+            self.db.cursor().execute("rollback")
+            raise
+        else:
+            self.db.cursor().execute("commit")
+
     def mk_url(self, host, path, **qdict):
         query = urlparse.urlencode(qdict)
         return urlparse.urlunparse((
@@ -1106,7 +1105,7 @@ class API(object):
             tes.append(te)
         while True:
             try:
-                with begin(self.db):
+                with self.begin():
                     for te in tes:
                         te.serialize()
             except apsw.BusyError:

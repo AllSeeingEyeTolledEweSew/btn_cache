@@ -96,7 +96,7 @@ class MetadataScraper(object):
         if not success:
             return True
 
-        with btn.begin(self.api.db):
+        with self.api.begin():
             offset = get_int(self.api, self.KEY_OFFSET) or 0
             results = get_int(self.api, self.KEY_RESULTS)
             next_offset = offset + self.BLOCK_SIZE - 1
@@ -121,7 +121,7 @@ class MetadataScraper(object):
             else:
                 raise
 
-        with btn.begin(self.api.db):
+        with self.api.begin():
             set_int(self.api, self.KEY_RESULTS, sr.results)
             apply_contiguous_results_locked(self.api, offset, sr)
 
@@ -257,7 +257,7 @@ class MetadataTipScraper(object):
 
         sr = self.api.getTorrents(results=2**31, offset=offset)
 
-        with btn.begin(self.api.db):
+        with self.api.begin():
             return self.update_scrape_results_locked(offset, sr)
 
     def run(self):
