@@ -309,7 +309,7 @@ class TorrentFileScraper(object):
 
     def get_unfilled_ids(self):
         c = self.api.db.cursor().execute(
-            "select torrent_entry.id, torrent_entry.updated_at "
+            "select torrent_entry.id "
             "from torrent_entry "
             "left join file_info on torrent_entry.id = file_info.id "
             "where file_info.id is null "
@@ -319,6 +319,11 @@ class TorrentFileScraper(object):
         for r in c:
             yield r
 
+    def update_ts(self):
+        r = self.api.db.cursor().execute(
+            "select max(updated_at) from torrent_entry").fetchone()
+        self.ts = r[0]
+
     def step(self):
         now = time.time()
         if (self.last_reset_time is None or
@@ -327,9 +332,10 @@ class TorrentFileScraper(object):
             self.queue = Queue.PriorityQueue()
             self.last_reset_time = now
 
-        for id, id_ts in self.get_unfilled_ids():
-            self.ts = max(self.ts, id_ts)
-            self.queue.put((-id, id))
+        with self.api.db:
+            for id, in self.get_unfilled_ids():
+                self.queue.put((-id, id))
+            self.update_ts()
 
         try:
             _, id = self.queue.get_nowait()
