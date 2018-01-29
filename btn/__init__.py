@@ -795,7 +795,7 @@ class API(object):
             self.token_bucket = token_bucket
         else:
             self.token_bucket = tbucket.TokenBucket(
-                self.user_db_path, "web:" + self.key, self.token_rate,
+                self.user_db_path, "web:%s" % self.key, self.token_rate,
                 self.token_period)
         if api_token_bucket is not None:
             self.api_token_bucket = api_token_bucket
