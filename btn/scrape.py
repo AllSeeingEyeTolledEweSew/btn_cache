@@ -71,6 +71,9 @@ class MetadataScraper(object):
         if target_tokens is None:
             target_tokens = self.DEFAULT_TARGET_TOKENS
 
+        if api.key is None:
+            raise ValueError("API key not configured")
+
         self.api = api
         self.target_tokens = target_tokens
         self.num_threads = num_threads
@@ -165,6 +168,15 @@ class MetadataTipScraper(object):
     KEY_NEWEST = "tip_scrape_newest"
 
     def __init__(self, api, once=False):
+        if api.key is None:
+            raise ValueError("API key not configured")
+        if api.authkey is None:
+            raise ValueError("authkey not configured")
+        if api.passkey is None:
+            raise ValueError("passkey not configured")
+        if api.auth is None:
+            raise ValueError("auth not configured")
+
         self.api = api
         self.once = once
         self.thread = None
@@ -298,6 +310,11 @@ class TorrentFileScraper(object):
     def __init__(self, api, reset_time=None):
         if reset_time is None:
             reset_time = self.DEFAULT_RESET_TIME
+
+        if api.authkey is None:
+            raise ValueError("authkey not configured")
+        if api.passkey is None:
+            raise ValueError("passkey not configured")
 
         self.api = api
         self.reset_time = reset_time
