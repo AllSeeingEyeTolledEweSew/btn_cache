@@ -394,7 +394,8 @@ class TorrentEntry(object):
                 "left outer join origin on origin.id = origin_id "
                 "left outer join resolution on resolution.id = resolution_id "
                 "left outer join source on source.id = source_id "
-                "left outer join tracker_stats on tracker_stats.id = id "
+                "left outer join tracker_stats "
+                "on tracker_stats.id = torrent_entry.id "
                 "where torrent_entry.id = ?",
                 (id,)).fetchone()
             if not row:
