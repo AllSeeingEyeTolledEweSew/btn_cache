@@ -1183,35 +1183,35 @@ class API(object):
                 ui.serialize()
         return ui
 
-    def feed(self, type=None, timestamp=None):
-        if timestamp is None:
-            timestamp = 0
+    #def feed(self, type=None, timestamp=None):
+    #    if timestamp is None:
+    #        timestamp = 0
 
-        args = {
-            "delete": CrudResult.ACTION_DELETE,
-            "update": CrudResult.ACTION_UPDATE,
-            "ts": timestamp}
+    #    args = {
+    #        "delete": CrudResult.ACTION_DELETE,
+    #        "update": CrudResult.ACTION_UPDATE,
+    #        "ts": timestamp}
 
-        type_to_table = {
-            CrudResult.TYPE_TORRENT_ENTRY: "torrent_entry",
-            CrudResult.TYPE_GROUP: "torrent_entry_group",
-            CrudResult.TYPE_SERIES: "series"}
+    #    type_to_table = {
+    #        CrudResult.TYPE_TORRENT_ENTRY: "torrent_entry",
+    #        CrudResult.TYPE_GROUP: "torrent_entry_group",
+    #        CrudResult.TYPE_SERIES: "series"}
 
-        if type is None:
-            candidates = type_to_table.items()
-        else:
-            candidates = ((type, type_to_table[type]),)
+    #    if type is None:
+    #        candidates = type_to_table.items()
+    #    else:
+    #        candidates = ((type, type_to_table[type]),)
 
-        for type, table in candidates:
-            c = self.db.cursor()
-            c.execute(
-                "select id, updated_at, deleted "
-                "from %(table)s where "
-                "updated_at > ?" % {"table": table},
-                (timestamp,))
-            for id, updated_at, deleted in c:
-                if deleted:
-                    action = CrudResult.ACTION_DELETE
-                else:
-                    action = CrudResult.ACTION_UPDATE
-                yield CrudResult(type, action, id)
+    #    for type, table in candidates:
+    #        c = self.db.cursor()
+    #        c.execute(
+    #            "select id, updated_at, deleted "
+    #            "from %(table)s where "
+    #            "updated_at > ?" % {"table": table},
+    #            (timestamp,))
+    #        for id, updated_at, deleted in c:
+    #            if deleted:
+    #                action = CrudResult.ACTION_DELETE
+    #            else:
+    #                action = CrudResult.ACTION_UPDATE
+    #            yield CrudResult(type, action, id)
