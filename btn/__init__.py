@@ -291,13 +291,10 @@ class TorrentEntry(object):
                 "container_id integer not null, "
                 "group_id integer not null, "
                 "info_hash text, "
-                "leechers integer not null, "
                 "origin_id integer not null, "
                 "release_name text not null, "
                 "resolution_id integer not null, "
-                "seeders integer not null, "
                 "size integer not null, "
-                "snatched integer not null, "
                 "source_id integer not null, "
                 "time integer not null, "
                 "raw_torrent_cached tinyint not null default 0, "
@@ -364,6 +361,12 @@ class TorrentEntry(object):
             c.execute(
                 "create index if not exists file_info_updated_at "
                 "on file_info (updated_at)")
+            c.execute(
+                "create table if not exists tracker_stats ("
+                "id integer primary key,"
+                "snatched integer not null, "
+                "seeders integer not null, "
+                "leechers integer not null)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -376,13 +379,13 @@ class TorrentEntry(object):
                 "container.name as container, "
                 "torrent_entry.group_id as group_id, "
                 "info_hash, "
-                "leechers, "
+                "tracker_stats.leechers as leechers, "
                 "origin.name as origin, "
                 "release_name, "
                 "resolution.name as resolution, "
-                "seeders, "
+                "tracker_stats.seeders as seeders, "
                 "size, "
-                "snatched, "
+                "tracker_stats.snatched as snatched, "
                 "source.name as source, "
                 "time "
                 "from torrent_entry "
@@ -391,6 +394,7 @@ class TorrentEntry(object):
                 "left outer join origin on origin.id = origin_id "
                 "left outer join resolution on resolution.id = resolution_id "
                 "left outer join source on source.id = source_id "
+                "left outer join tracker_stats on tracker_stats.id = id "
                 "where torrent_entry.id = ?",
                 (id,)).fetchone()
             if not row:
@@ -470,13 +474,10 @@ class TorrentEntry(object):
                 "container_id": container_id,
                 "group_id": self.group.id,
                 "info_hash": self.info_hash,
-                "leechers": self.leechers,
                 "origin_id": origin_id,
                 "release_name": self.release_name,
                 "resolution_id": resolution_id,
-                "seeders": self.seeders,
                 "size": self.size,
-                "snatched": self.snatched,
                 "source_id": source_id,
                 "time": self.time,
                 "raw_torrent_cached": self.raw_torrent_cached,
@@ -502,6 +503,10 @@ class TorrentEntry(object):
                  "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
                      for n in where_names)},
                 update_params)
+            self.api.db.cursor().execute(
+                "insert or replace into tracker_stats "
+                "(id, snatched, seeders, leechers) values (?, ?, ?, ?)",
+                (self.id, self.snatched, self.seeders, self.leechers))
 
             if file_info:
                 values = [
