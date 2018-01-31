@@ -32,25 +32,40 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
     is_end = offset + len(ids) >= sr.results
 
     if ids:
-        if changestamp is None:
-            changestamp = api.get_changestamp()
-        c = api.db.cursor()
-        if is_end:
-            c.execute(
-                "update torrent_entry set deleted = 1, updated_at = ? "
-                "where id < ? and not deleted",
-                (changestamp, ids[-1]))
-        c.execute(
+        api.db.cursor().execute(
             "create temp table ids (id integer not null primary key)")
-        c.executemany(
+        api.db.cursor().executemany(
             "insert into temp.ids (id) values (?)",
             [(id,) for id in ids])
-        c.execute(
-            "update torrent_entry set deleted = 1, updated_at = ? "
-            "where not deleted and id < ? and id > ? and "
-            "id not in (select id from temp.ids)",
-            (changestamp, ids[0], ids[-1]))
-        c.execute("drop table temp.ids")
+
+        torrent_entries_to_delete = set()
+        groups_to_check = set()
+        if is_end:
+            for id, group_id, in api.db.cursor().execute(
+                    "select id, group_id from torrent_entry "
+                    "where id < ? and not deleted", (ids[-1],)):
+                torrent_entries_to_delete.add(id)
+                groups_to_check.add(group_id)
+        for id, group_id, in api.db.cursor().execute(
+                "select id, group_id from torrent_entry "
+                "where not deleted and id < ? and id > ? and "
+                "id not in (select id from temp.ids)",
+                (ids[0], ids[-1])):
+            torrent_entries_to_delete.add(id)
+            groups_to_check.add(group_id)
+
+        api.db.cursor().execute("drop table temp.ids")
+
+        if torrent_entries_to_delete:
+            if changestamp is None:
+                changestamp = api.get_changestamp()
+
+            api.db.cursor().executemany(
+                "update torrent_entry set deleted = 1, updated_at = ? "
+                "where id = ?",
+                [(changestamp, id) for id in torrent_entries_to_delete])
+            btn.Group._maybe_delete(
+                api, *list(groups_to_check), changestamp=changestamp)
 
     return ids, is_end
 

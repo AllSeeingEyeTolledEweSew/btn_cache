@@ -75,6 +75,20 @@ class Series(object):
             del row[k]
         return cls(api, **row)
 
+    @classmethod
+    def _maybe_delete(cls, api, *ids, changestamp=None):
+        if not ids:
+            return
+        with api.db:
+            if changestamp is None:
+                changestamp = api.get_changestamp()
+            api.db.cursor().executemany(
+                "update series set deleted = 1, updated_at = ? "
+                "where id = ? and not deleted and not exists ("
+                "select id from torrent_entry_group "
+                "where series_id = series.id and not deleted)",
+                [(changestamp, id) for id in ids])
+
     def __init__(self, api, id=None, imdb_id=None, name=None, banner=None,
                  poster=None, tvdb_id=None, tvrage_id=None, youtube_trailer=None):
         self.api = api
@@ -174,6 +188,52 @@ class Group(object):
             series = Series._from_db(api, row.pop("series_id"))
             return cls(api, series=series, **row)
 
+    @classmethod
+    def _maybe_delete(cls, api, *ids, changestamp=None):
+        if not ids:
+            return
+        with api.db:
+            if len(ids) > 900:
+                api.db.cursor().execute(
+                    "create temporary table delete_group_ids "
+                    "(id integer not null primary key)")
+                api.db.cursor().executemany(
+                    "insert into temp.delete_group_ids (id) values (?)",
+                    [(id,) for id in ids])
+                rows = api.db.cursor().execute(
+                    "select torrent_entry_group.id, "
+                    "torrent_entry_group.series_id from torrent_entry_group "
+                    "inner join temp.delete_group_ids "
+                    "where temp.delete_group_ids.id = torrent_entry_group.id "
+                    "and not deleted and not exists ("
+                    "select id from torrent_entry "
+                    "where group_id = torrent_entry_group.id "
+                    "and not deleted)").fetchall()
+                api.db.cursor().execute("drop table temp.delete_group_ids")
+            else:
+                rows = api.db.cursor().execute(
+                    "select id, series_id from torrent_entry_group "
+                    "where id in (%s) and not deleted and not exists ("
+                    "select id from torrent_entry "
+                    "where group_id = torrent_entry_group.id and not deleted)" %
+                    ",".join(["?"] * len(ids)),
+                    tuple(ids))
+            series_ids_to_check = set()
+            group_ids_to_delete = set()
+            for group_id, series_id in rows:
+                group_ids_to_delete.add(group_id)
+                series_ids_to_check.add(series_id)
+            if not group_ids_to_delete:
+                return
+            if changestamp is None:
+                changestamp = api.get_changestamp()
+            api.db.cursor().executemany(
+                "update torrent_entry_group set deleted = 1, updated_at = ? "
+                "where id = ?",
+                [(changestamp, id) for id in group_ids_to_delete])
+            Series._maybe_delete(
+                api, *list(series_ids_to_check), changestamp=changestamp)
+
     def __init__(self, api, id=None, category=None, name=None, series=None):
         self.api = api
 
@@ -192,6 +252,10 @@ class Group(object):
             category_id = self.api.db.cursor().execute(
                 "select id from category where name = ?",
                 (self.category,)).fetchone()[0]
+            r = self.api.db.cursor().execute(
+                "select series_id from torrent_entry_group where id = ?",
+                (self.id,)).fetchone()
+            old_series_id = r[0] if r is not None else None
             self.series.serialize(changestamp=changestamp)
             params = {
                 "category_id": category_id,
@@ -220,6 +284,9 @@ class Group(object):
                  "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
                      for n in where_names)},
                 update_params)
+            if old_series_id != self.series.id:
+                Series._maybe_delete(
+                    self.api, old_series_id, changestamp=changestamp)
 
     def __repr__(self):
         return "<Group %s \"%s\" \"%s\">" % (
@@ -466,6 +533,10 @@ class TorrentEntry(object):
             source_id = self.api.db.cursor().execute(
                 "select id from source where name = ?",
                 (self.source,)).fetchone()[0]
+            r = self.api.db.cursor().execute(
+                "select group_id from torrent_entry where id = ?",
+                (self.id,)).fetchone()
+            old_group_id = r[0] if r is not None else None
 
             if changestamp is None:
                 changestamp = self.api.get_changestamp()
@@ -508,6 +579,9 @@ class TorrentEntry(object):
                 "insert or replace into tracker_stats "
                 "(id, snatched, seeders, leechers) values (?, ?, ?, ?)",
                 (self.id, self.snatched, self.seeders, self.leechers))
+            if old_group_id != self.group.id:
+                Group._maybe_delete(
+                    self.api, old_group_id, changestamp=changestamp)
 
             if file_info:
                 values = [
