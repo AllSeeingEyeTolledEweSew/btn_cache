@@ -9,8 +9,8 @@ with open("README") as readme:
 
 setup(
     name="btn",
-    version="0.1.2",
-    description="Caching API to broadcasthe.net",
+    version="1.0.0",
+    description="API and local cache for broadcasthe.net",
     long_description=documentation,
     author="AllSeeingEyeTolledEweSew",
     author_email="allseeingeyetolledewesew@protonmail.com",
@@ -22,7 +22,7 @@ setup(
         "better-bencode>=0.2.1",
         "PyYAML>=3.12",
         "requests>=2.12.3",
-        "tbucket>=0.1.0",
+        "tbucket>=1.0.0",
         "feedparser>=5.2.1",
     ],
     entry_points={
@@ -30,4 +30,16 @@ setup(
             "btn_scrape = btn.cli.scrape:main",
         ],
     },
+    classifiers=[
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Developers",
+        "License :: Public Domain",
+        "Programming Language :: Python",
+        "Topic :: Communications :: File Sharing",
+        "Topic :: Database",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: System :: Networking",
+        "Operating System :: OS Independent",
+        "License :: Public Domain",
+    ],
 )
