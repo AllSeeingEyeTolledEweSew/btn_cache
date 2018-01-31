@@ -1186,8 +1186,9 @@ class API(object):
         while True:
             try:
                 with self.begin():
+                    changestamp = self.get_changestamp()
                     for te in tes:
-                        te.serialize()
+                        te.serialize(changestamp=changestamp)
             except apsw.BusyError:
                 log().warning(
                     "BusyError while trying to serialize, will retry")
