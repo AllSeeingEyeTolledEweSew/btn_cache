@@ -48,7 +48,7 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
                 groups_to_check.add(group_id)
         for id, group_id, in api.db.cursor().execute(
                 "select id, group_id from torrent_entry "
-                "where not deleted and id < ? and id > ? and "
+                "where (not deleted) and id < ? and id > ? and "
                 "id not in (select id from temp.ids)",
                 (ids[0], ids[-1])):
             torrent_entries_to_delete.add(id)
