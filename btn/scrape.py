@@ -203,7 +203,7 @@ class MetadataTipScraper(object):
         user = self.api.userInfoCached()
         if not user:
             user = self.api.userInfo()
-        resp = self.api.get(
+        resp = self.api._get(
             "/feeds.php", feed="torrents_all", user=user.id,
             auth=self.api.auth, passkey=self.api.passkey,
             authkey=self.api.authkey)

@@ -1443,7 +1443,7 @@ class API(object):
         else:
             self.db.cursor().execute("commit")
 
-    def mk_url(self, host, path, **qdict):
+    def _mk_url(self, host, path, **qdict):
         query = urlparse.urlencode(qdict)
         return urlparse.urlunparse((
             self.SCHEME, host, path, None, query, None))
@@ -1451,14 +1451,14 @@ class API(object):
     @property
     def announce_urls(self):
         """Yields all user-specific announce URLs currently used by BTN."""
-        yield self.mk_url("landof.tv", "%s/announce" % self.passkey)
+        yield self._mk_url("landof.tv", "%s/announce" % self.passkey)
 
     @property
     def endpoint(self):
         """The HTTP endpoint to the API."""
-        return self.mk_url(self.API_HOST, self.API_PATH)
+        return self._mk_url(self.API_HOST, self.API_PATH)
 
-    def call_url(self, method, url, **kwargs):
+    def _call_url(self, method, url, **kwargs):
         """A helper function to make a normal HTTP call to the BTN site.
 
         This will consume a token from `token_bucket`, blocking if necessary.
@@ -1483,7 +1483,7 @@ class API(object):
             raise HTTPError(response.text, response.status_code)
         return response
 
-    def call(self, method, path, qdict, **kwargs):
+    def _call(self, method, path, qdict, **kwargs):
         """A helper function to make a normal HTTP call to the BTN site.
 
         This will consume a token from `token_bucket`, blocking if necessary.
@@ -1501,10 +1501,10 @@ class API(object):
         Raises:
             HTTPError: If there was an HTTP-level error.
         """
-        return self.call_url(
-            method, self.mk_url(self.HOST, path, **qdict), **kwargs)
+        return self._call_url(
+            method, self._mk_url(self.HOST, path, **qdict), **kwargs)
 
-    def get(self, path, **qdict):
+    def _get(self, path, **qdict):
         """A helper function to make a normal HTTP GET call to the BTN site.
 
         This will consume a token from `token_bucket`, blocking if necessary.
@@ -1519,9 +1519,9 @@ class API(object):
         Raises:
             HTTPError: If there was an HTTP-level error.
         """
-        return self.call(requests.get, path, qdict)
+        return self._call(requests.get, path, qdict)
 
-    def get_url(self, url, **kwargs):
+    def _get_url(self, url, **kwargs):
         """A helper function to make a normal HTTP GET call to the BTN site.
 
         This will consume a token from `token_bucket`, blocking if necessary.
@@ -1536,7 +1536,7 @@ class API(object):
         Raises:
             HTTPError: If there was an HTTP-level error.
         """
-        return self.call_url(requests.get, url, **kwargs)
+        return self._call_url(requests.get, url, **kwargs)
 
     def call_api(self, method, *params, leave_tokens=None,
                  block_on_token=None, consume_token=None):
