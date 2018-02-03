@@ -1,4 +1,5 @@
-#!/usr/bin/python
+# The author disclaims copyright to this source code. Please see the
+# accompanying UNLICENSE file.
 
 import contextlib
 import json as json_lib

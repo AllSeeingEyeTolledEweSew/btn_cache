@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+# The author disclaims copyright to this source code. Please see the
+# accompanying UNLICENSE file.
 
 from __future__ import with_statement
 
