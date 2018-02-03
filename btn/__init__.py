@@ -1827,7 +1827,8 @@ class API(object):
             c.execute(query, values)
             return [TorrentEntry._from_db(self, r[0]) for r in c]
 
-    def getTorrents(self, results=10, offset=0, **kwargs):
+    def getTorrents(self, results=10, offset=0, leave_tokens=None,
+                    block_on_token=None, consume_token=None, **kwargs):
         """Issues a "getTorrents" API call.
 
         Args:
@@ -1856,7 +1857,9 @@ class API(object):
             APIError: When we receive an error from the API.
         """
         sr_json = self.getTorrentsJson(
-            results=results, offset=offset, **kwargs)
+            results=results, offset=offset, leave_tokens=leave_tokens,
+            block_on_token=block_on_token, consume_token=consume_token,
+            **kwargs)
         tes = []
         for tj in sr_json.get("torrents", {}).values():
             te = self._torrent_entry_from_json(tj)
@@ -1916,7 +1919,8 @@ class API(object):
         """
         return TorrentEntry._from_db(self, id)
 
-    def getTorrentById(self, id):
+    def getTorrentById(self, id, leave_tokens=None, block_on_token=None,
+                       consume_token=None):
         """Issues a "getTorrentById" API call.
 
         Args:
@@ -1939,7 +1943,9 @@ class API(object):
                 available.
             APIError: When we receive an error from the API.
         """
-        tj = self.getTorrentByIdJson(id)
+        tj = self.getTorrentByIdJson(
+            id, leave_tokens=leave_tokens, block_on_token=block_on_token,
+            consume_token=consume_token)
         te = self._torrent_entry_from_json(tj) if tj else None
         if te:
             with self.db:
@@ -2036,7 +2042,8 @@ class API(object):
         """
         return UserInfo._from_db(self)
 
-    def userInfo(self):
+    def userInfo(self, leave_tokens=None, block_on_token=None,
+                 consume_token=None):
         """Issues a "userInfo" API call.
 
         Args:
@@ -2058,7 +2065,9 @@ class API(object):
                 available.
             APIError: When we receive an error from the API.
         """
-        uj = self.userInfoJson()
+        uj = self.userInfoJson(
+            leave_tokens=leave_tokens, block_on_token=block_on_token,
+            consume_token=consume_token)
         ui = self._user_info_from_json(uj) if uj else None
         if ui:
             with self.db:
