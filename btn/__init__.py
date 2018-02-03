@@ -1,6 +1,14 @@
 # The author disclaims copyright to this source code. Please see the
 # accompanying UNLICENSE file.
 
+"""
+A frontend to the BTN metadata API, tailored to maintain a local cache.
+
+BTN has a large set of metadata, but enforces call limits that are so low that
+it's difficult to use the API for much. This module is focused on maintaining a
+cache of data from BTN in a local SQLite database.
+"""
+
 import contextlib
 import json as json_lib
 import logging
@@ -18,6 +26,26 @@ import tbucket
 import yaml
 
 
+__all__ = [
+    "TRACKER_REGEXES",
+    "EPISODE_SEED_TIME",
+    "EPISODE_SEED_RATIO",
+    "SEASON_SEED_TIME",
+    "SEASON_SEED_RATIO",
+    "TORRENT_HISTORY_FRACTION",
+    "add_arguments",
+    "API",
+    "SearchResult",
+    "Error",
+    "APIError",
+    "TorrentEntry",
+    "FileInfo",
+    "Group",
+    "Series",
+]
+
+
+"""A list of precompiled regexes to match BTN's trackers URLs."""
 TRACKER_REGEXES = (
     re.compile(
         r"https?://landof.tv/(?P<passkey>[a-z0-9]{32})/"),
@@ -26,23 +54,56 @@ TRACKER_REGEXES = (
         r"(?P<passkey>[a-z0-9]{32})/"),
 )
 
+"""The minimum time to seed an episode torrent, in seconds."""
 EPISODE_SEED_TIME = 24 * 3600
+"""The minimum ratio to seed an episode torrent, in seconds."""
 EPISODE_SEED_RATIO = 1.0
+"""The minimum time to seed a season torrent, in seconds."""
 SEASON_SEED_TIME = 120 * 3600
+"""The minimum ratio to seed a season torrent, in seconds."""
 SEASON_SEED_RATIO = 1.0
 
-# Minimum completion for a torrent to count on your history.
+"""The minimum fraction of downloaded data for it to count on your history."""
 TORRENT_HISTORY_FRACTION = 0.1
 
 
 def log():
+    """Gets a module-level logger."""
     return logging.getLogger(__name__)
 
 
 class Series(object):
+    """A Series entry on BTN.
+
+    Attributes:
+        api: The API instance to which this Series is tied.
+        id: The integer id of the Series on BTN.
+        imdb_id: The string imdb_id of the Series. Typically in 7-digit
+            '0123456' format.
+        name: The series name.
+        banner: A pseudo-URL to the landscape-style banner image hosted on BTN.
+            This is sometimes a real URL, but often takes the form
+            '//hostname/path/to/image.jpg'.
+        poster: A pseudo-URL to the portrait-style poster image hosted on BTN.
+            This is sometimes a real URL, but often takes the form
+            '//hostname/path/to/image.jpg'.
+        tvdb_id: The integer TVDB identifier of the series.
+        tvrage_id: The integer TvRage identifier of the series.
+        youtube_trailer: A URL to the youtube trailer for the series.
+    """
 
     @classmethod
     def _create_schema(cls, api):
+        """Initializes the database schema of an API instance.
+
+        This should only be called at initialization time.
+
+        This will perform a SAVEPOINT / DML / RELEASE command sequence on the
+        database.
+
+        Args:
+            api: An API instance.
+        """
         with api.db:
             c = api.db.cursor()
             c.execute(
@@ -66,6 +127,24 @@ class Series(object):
 
     @classmethod
     def _from_db(cls, api, id):
+        """Creates a Series from the cached metadata in an API instance.
+
+        This just deserializes data from the API's database into a python
+        object; it doesn't make any API calls.
+
+        A new Series object is always created from this call. Series objects
+        are not cached.
+
+        This only calls SELECT on the database.
+
+        Args:
+            api: An API instance.
+            id: A series id.
+
+        Returns:
+            A Series with the data cached in the API's database, or None if the
+                series wasn't found in the cache.
+        """
         c = api.db.cursor()
         row = c.execute(
             "select * from series where id = ?", (id,)).fetchone()
@@ -78,6 +157,16 @@ class Series(object):
 
     @classmethod
     def _maybe_delete(cls, api, *ids, changestamp=None):
+        """Mark a series as deleted, if it has no non-deleted groups.
+
+        This will perform a SAVEPOINT / DML / RELEASE sequence on the database.
+
+        Args:
+            api: An API instance.
+            *ids: A list of series ids to consider for deletion.
+            changestamp: An integer changestamp. If None, a new changestamp
+                will be generated.
+        """
         if not ids:
             return
         with api.db:
@@ -103,6 +192,19 @@ class Series(object):
         self.youtube_trailer = youtube_trailer
 
     def serialize(self, changestamp=None):
+        """Serialize the Series' data to its API's database.
+
+        This will write all the fields of this Series to the "series" table of
+        the database of the `api`. If any fields have changed, the `updated_at`
+        column of the "series" table will be updated. If no data changes, the
+        corresponding row in "series" won't change at all.
+
+        This performs a SAVEPOINT / DML / RELEASE sequence against the API.
+
+        Args:
+            changestamp: A changestamp from the API. If None, a new changestamp
+                will be generated from the API.
+        """
         with self.api.db:
             if changestamp is None:
                 changestamp = self.api.get_changestamp()
@@ -141,9 +243,38 @@ class Series(object):
 
 
 class Group(object):
+    """A Group entry on BTN.
+
+    A Group is a set of torrents which all represent the same media (a
+    particular episode, movie, or else a particular set of media such as a
+    season pack).
+
+    Note that the "year" attribute which appears on the BTN site is absent
+    here, as it is not currently returned from the API.
+
+    Attributes:
+        api: The API instance to which this Series is tied.
+        id: The integer id of the Group on BTN.
+        category: Either "Episode" or "Season".
+        name: The name of the Group. Not necessarily unique within its Series.
+            The name is semi-meaningful. Group names matching some patterns
+            like 'S01E01', '2012.12.21' or 'Season 3' are recognized and
+            visually grouped together on the BTN site.
+        series: The Series object this Group belongs to.
+    """
 
     @classmethod
     def _create_schema(cls, api):
+        """Initializes the database schema of an API instance.
+
+        This should only be called at initialization time.
+
+        This will perform a SAVEPOINT / DML / RELEASE command sequence on the
+        database.
+
+        Args:
+            api: An API instance.
+        """
         with api.db:
             c = api.db.cursor()
             c.execute(
@@ -170,6 +301,24 @@ class Group(object):
 
     @classmethod
     def _from_db(cls, api, id):
+        """Creates a Group from the cached metadata in an API instance.
+
+        This just deserializes data from the API's database into a python
+        object; it doesn't make any API calls.
+
+        A new Group object, and attached Series object, are always created from
+        this function. Group and Series objects are not cached.
+
+        This calls SAVEPOINT / SELECT / RELEASE on the database.
+
+        Args:
+            api: An API instance.
+            id: A group id.
+
+        Returns:
+            A Group with the data cached in the API's database, or None if the
+                group wasn't found in the cache.
+        """
         with api.db:
             c = api.db.cursor()
             row = c.execute(
@@ -191,6 +340,19 @@ class Group(object):
 
     @classmethod
     def _maybe_delete(cls, api, *ids, changestamp=None):
+        """Mark a group as deleted, if it has no non-deleted torrent entries.
+
+        This will also call `Series._maybe_delete` on the series ids associated
+        with the given group ids.
+
+        This will perform a SAVEPOINT / DML / RELEASE sequence on the database.
+
+        Args:
+            api: An API instance.
+            *ids: A list of group ids to consider for deletion.
+            changestamp: An integer changestamp. If None, a new changestamp
+                will be generated.
+        """
         if not ids:
             return
         with api.db:
@@ -244,6 +406,22 @@ class Group(object):
         self.series = series
 
     def serialize(self, changestamp=None):
+        """Serialize the Group's data to its API's database.
+
+        This will write all the fields of this Series to the
+        "torrent_entry_group" table of the database of the `api`. If any fields
+        have changed, the `updated_at` column of the "torrent_entry_group"
+        table will be updated. If no data changes, the corresponding row in
+        "torrent_entry_group" won't change at all.
+
+        This also calls `serialize()` on the associated `series`.
+
+        This performs a SAVEPOINT / DML / RELEASE sequence against the API.
+
+        Args:
+            changestamp: A changestamp from the API. If None, a new changestamp
+                will be generated from the API.
+        """
         with self.api.db:
             if changestamp is None:
                 changestamp = self.api.get_changestamp()
@@ -295,9 +473,37 @@ class Group(object):
 
 
 class FileInfo(object):
+    """Metadata about a particular file in a torrent on BTN.
+
+    Attributes:
+        index: The integer index of this file within the torrent metafile.
+        length: The integer length of the file in bytes.
+        path: The recommended pathname as a string, as it appears in the
+            torrent metafile.
+    """
 
     @classmethod
     def _from_db(cls, api, id):
+        """Creates FileInfo objects from the cached metadata in an API
+        instance.
+
+        This just deserializes data from the API's database into a python
+        object; it doesn't make any API calls.
+
+        This function always creates new FileInfo objects. The objects are not
+        cached.
+
+        This calls SAVEPOINT / SELECT / RELEASE on the database.
+
+        Args:
+            api: An API instance.
+            id: A torrent entry id.
+
+        Returns:
+            A tuple of FileInfo objects with the data cached in the API's
+                database associated with a given torrent entry id, or an empty
+                tuple if none were found.
+        """
         with api.db:
             c = api.db.cursor()
             rows = c.execute(
@@ -312,6 +518,16 @@ class FileInfo(object):
 
     @classmethod
     def _from_tobj(cls, tobj):
+        """Generates FileInfo objects from a deserialized torrent metafile.
+
+        Args:
+            tobj: A deserialized torrent metafile; i.e. the result of
+                `better_bencode.load*()`.
+
+        Yields:
+            FileInfo objects for the given torrent metafile, in the order they
+                appear in the metafile.
+        """
         ti = tobj[b"info"]
         values = []
         if b"files" in ti:
@@ -334,22 +550,68 @@ class FileInfo(object):
 
 
 class TorrentEntry(object):
+    """Metadata about a torrent on BTN.
 
-    CATEGORY_EPISODE = "Episode"
-    CATEGORY_SEASON = "Season"
+    A TorrentEntry is named to distinguish it from a "torrent". A TorrentEntry
+    is the tracker's metadata about a torrent, including at least its info
+    hash; the word "torrent" may refer to either the metafile or the actual
+    data files.
 
-    GROUP_EPISODE_REGEX = re.compile(
-        r"S(?P<season>\d+)(?P<episodes>(E\d+)+)$")
-    PARTIAL_EPISODE_REGEX = re.compile(r"E(?P<episode>\d\d)")
-    GROUP_EPISODE_DATE_REGEX = re.compile(
-        r"(?P<year>\d\d\d\d)\.(?P<month>\d\d)\.(?P<day>\d\d)")
-    GROUP_EPISODE_SPECIAL_REGEX = re.compile(
-        r"Season (?P<season>\d+) - (?P<name>.*)")
+    Attributes:
+        api: The API instance to which this TorrentEntry is tied.
+        id: The integer id of the TorrentEntry on BTN.
+        codec: The name of the torrent's codec. Common values include "H.264",
+            "XviD" and "MPEG2".
+        container: The name of the torrent's container. Common values include
+            "MKV", "MP4" and "AVI".
+        group: The associated Group to which this TorrentEntry belongs.
+        info_hash: The "info hash" (the sha1 hash of the bencoded version of
+            the "info" section of the metafile). This appears on BTN in
+            capitalized hexadecimal, such as
+            "642BC82E51FD2BF6F977B8B3D7D571DA3A06B36B".
+        leechers: The current number of clients leeching the torrent.
+        origin: The origin of the torrent. Common values include "Scene", "P2P"
+            and "Internal".
+        release_name: The release name of the torrent as a string. This
+            commonly obeys a particular format laid out by the scene.
+        resolution: The resolution of the torrent, chosen from among one of
+            several string values used on BTN. Common values include "1080p",
+            "720p" and "SD".
+        seeders: The current number of client seeding the torrent.
+        size: The total size of the torrent in bytes.
+        snatched: The number of times the torrent has been "snatched" (fully
+            downloaded).
+        source: The source of the torrent. Common values include "WEB-DL",
+            "HDTV" and "Bluray".
+        time: The UNIX time (seconds since epoch) that this torrent was
+            uploaded to the tracker.
+    """
 
-    GROUP_FULL_SEASON_REGEX = re.compile(r"Season (?P<season>\d+)$")
+    #CATEGORY_EPISODE = "Episode"
+    #CATEGORY_SEASON = "Season"
+
+    #GROUP_EPISODE_REGEX = re.compile(
+    #    r"S(?P<season>\d+)(?P<episodes>(E\d+)+)$")
+    #PARTIAL_EPISODE_REGEX = re.compile(r"E(?P<episode>\d\d)")
+    #GROUP_EPISODE_DATE_REGEX = re.compile(
+    #    r"(?P<year>\d\d\d\d)\.(?P<month>\d\d)\.(?P<day>\d\d)")
+    #GROUP_EPISODE_SPECIAL_REGEX = re.compile(
+    #    r"Season (?P<season>\d+) - (?P<name>.*)")
+
+    #GROUP_FULL_SEASON_REGEX = re.compile(r"Season (?P<season>\d+)$")
 
     @classmethod
     def _create_schema(cls, api):
+        """Initializes the database schema of an API instance.
+
+        This should only be called at initialization time.
+
+        This will perform a SAVEPOINT / DML / RELEASE command sequence on the
+        database.
+
+        Args:
+            api: An API instance.
+        """
         with api.db:
             c = api.db.cursor()
             c.execute(
@@ -438,6 +700,25 @@ class TorrentEntry(object):
 
     @classmethod
     def _from_db(cls, api, id):
+        """Creates a TorrentEntry from the cached metadata in an API instance.
+
+        This just deserializes data from the API's database into a python
+        object; it doesn't make any API calls.
+
+        A new TorrentEntry object, and attached FileInfo, Group and Series
+        objects, are always created from this function. None of these objects
+        are cached for reuse.
+
+        This calls SAVEPOINT / SELECT / RELEASE on the database.
+
+        Args:
+            api: An API instance.
+            id: A TorrentEntry id.
+
+        Returns:
+            A TorrentEntry with the data cached in the API's database, or None
+                if the group wasn't found in the cache.
+        """
         with api.db:
             c = api.db.cursor()
             row = c.execute(
@@ -497,6 +778,31 @@ class TorrentEntry(object):
         self._raw_torrent = None
 
     def serialize(self, changestamp=None):
+        """Serialize the TorrentEntry's data to its API's database.
+
+        This will write all the fields of this TorrentEntry to the
+        "torrent_entry" table of the database of the `api`. If any fields have
+        changed, the `updated_at` column of the "torrent_entry" table will be
+        updated. If no data changes, the corresponding row in "torrent_entry"
+        won't change at all.
+
+        The "tracker_stats" table is always updated.
+
+        The "enum value" tables "codec", "container", "origin", "resolution"
+        and "source" will also be updated with new values if necessary.
+
+        If the raw torrent has been cached, this function will also update the
+        "file_info" table if necessary.
+
+        This also calls `serialize()` on the associated `group` and its
+        `series`.
+
+        This performs a SAVEPOINT / DML / RELEASE sequence against the API.
+
+        Args:
+            changestamp: A changestamp from the API. If None, a new changestamp
+                will be generated from the API.
+        """
         file_info = None
         if self.raw_torrent_cached and not any(self.file_info_cached):
             file_info = list(FileInfo._from_tobj(self.torrent_object))
@@ -595,12 +901,22 @@ class TorrentEntry(object):
 
     @property
     def link(self):
+        """A link to the torrent metafile."""
         return self.api.mk_url(
             self.api.HOST, "/torrents.php", action="download",
             authkey=self.api.authkey, torrent_pass=self.api.passkey,
             id=self.id)
 
     def magnet_link(self, include_as=True):
+        """Gets a magnet link for this torrent.
+
+        Args:
+            include_as: If True, include an "&as=..." parameter with a direct
+                link to the torrent file. Defaults to True.
+
+        Returns:
+            A "magnet:?..." link string.
+        """
         qsl = [
             ("dn", self.release_name),
             ("xt", "urn:btih:" + self.info_hash),
@@ -614,14 +930,25 @@ class TorrentEntry(object):
 
     @property
     def raw_torrent_path(self):
+        """The path to the cached torrent metafile."""
         return os.path.join(
             self.api.raw_torrent_cache_path, "%s.torrent" % self.id)
 
     @property
     def raw_torrent_cached(self):
+        """Whether or not the torrent metafile has been locally cached."""
         return os.path.exists(self.raw_torrent_path)
 
     def _got_raw_torrent(self, raw_torrent):
+        """Callback that should be called when we receive the torrent metafile.
+
+        This will write the torrent metafile to `raw_torrent_path`.
+
+        Will call `serialize()`.
+
+        Args:
+            raw_torrent: The bencoded torrent metafile.
+        """
         self._raw_torrent = raw_torrent
         if self.api.store_raw_torrent:
             if not os.path.exists(os.path.dirname(self.raw_torrent_path)):
@@ -641,6 +968,14 @@ class TorrentEntry(object):
 
     @property
     def raw_torrent(self):
+        """The torrent metafile.
+
+        If the torrent metafile isn't locally cached, it will be fetched from
+        BTN and cached.
+
+        Raises:
+            APIError: When fetching the torrent results in an HTTP error.
+        """
         with self._lock:
             if self._raw_torrent is not None:
                 return self._raw_torrent
@@ -657,10 +992,12 @@ class TorrentEntry(object):
 
     @property
     def file_info_cached(self):
+        """A tuple of cached FileInfo objects from the database."""
         return FileInfo._from_db(self.api, self.id)
 
     @property
     def torrent_object(self):
+        """The torrent metafile, deserialized via `better_bencode.load*()`."""
         return better_bencode.loads(self.raw_torrent)
 
     def __repr__(self):
@@ -668,9 +1005,43 @@ class TorrentEntry(object):
 
 
 class UserInfo(object):
+    """Information about a user on BTN.
+
+    Attributes:
+        api: The API instance to which this TorrentEntry is tied.
+        id: The integer id of the user on BTN.
+        bonus: The user's integer number of bonus points.
+        class_name: The name of the user's class.
+        class_level: The integer level of the user's class.
+        download: The user's all-time download in bytes.
+        email: The user's email address.
+        enabled: Whether or not the user is enabled.
+        hnr: The user's HnR count.
+        invites: The number of invites the user has sent.
+        join_date: The UNIX timestamp (seconds since epoch) when the user
+            joined BTN.
+        lumens: The user's lumen count.
+        paranoia: The user's paranoia level.
+        snatches: The user's total number of snatches.
+        title: The user's custom title.
+        upload: The user's all-time upload in bytes.
+        uploads_snatched: The number of times any torrent uploaded by the user
+            has been snatched.
+        username: The user's name on the site.
+    """
 
     @classmethod
     def _create_schema(cls, api):
+        """Initializes the database schema of an API instance.
+
+        This should only be called at initialization time.
+
+        This will perform a SAVEPOINT / DML / RELEASE command sequence on the
+        database.
+
+        Args:
+            api: An API instance.
+        """
         with api.db:
             api.db.cursor().execute(
                 "create table if not exists user.user_info ("
@@ -694,6 +1065,23 @@ class UserInfo(object):
 
     @classmethod
     def _from_db(cls, api):
+        """Creates a UserInfo from the cached metadata in an API instance.
+
+        This just deserializes data from the API's database into a python
+        object; it doesn't make any API calls.
+
+        A new UserInfo object is always created from this function. UserInfo
+        objects aren't cached for reuse.
+
+        This calls SAVEPOINT / SELECT / RELEASE on the database.
+
+        Args:
+            api: An API instance.
+
+        Returns:
+            A UserInfo representing the first (assumed only) user in the
+                database.
+        """
         c = api.db.cursor()
         row = c.execute(
             "select * from user.user_info limit 1").fetchone()
@@ -701,7 +1089,6 @@ class UserInfo(object):
             return None
         row = dict(zip((n for n, t in c.getdescription()), row))
         return cls(api, **row)
-
 
     def __init__(self, api, id=None, bonus=None, class_name=None,
                  class_level=None, download=None, email=None, enabled=None,
@@ -729,6 +1116,13 @@ class UserInfo(object):
         self.username = username
 
     def serialize(self):
+        """Serialize the UserInfo's data to its API's database.
+
+        This will truncate the "user_info" table in the user database, and
+        will serialize this UserInfo to be the only row.
+
+        This performs a SAVEPOINT / DML / RELEASE sequence against the API.
+        """
         with self.api.db:
             c = self.api.db.cursor()
             c.execute("delete from user.user_info")
@@ -754,6 +1148,13 @@ class UserInfo(object):
 
 
 class SearchResult(object):
+    """The result of a call to `API.getTorrents`.
+
+    Attributes:
+        results: The total integer number of torrents matched by the filters in
+            the getTorrents call.
+        torrents: A list of TorrentEntry objects.
+    """
 
     def __init__(self, results, torrents):
         self.results = int(results)
@@ -780,12 +1181,19 @@ class CrudResult(object):
 
 
 class Error(Exception):
+    """Top-level class for exceptions in this module."""
 
     pass
 
 
 class APIError(Error):
+    """An error returned from the API.
 
+    Attributes:
+        code: The numeric error code returned by the API.
+    """
+
+    """The user has exceeded their allowed call limit."""
     CODE_CALL_LIMIT_EXCEEDED = -32002
 
     def __init__(self, message, code):
@@ -799,6 +1207,21 @@ class WouldBlock(Error):
 
 
 def add_arguments(parser, create_group=True):
+    """A helper function to add standard command-line options to make an API
+    instance.
+
+    This adds the following command-line options:
+        --btn_cache_path: The path to the BTN cache.
+
+    Args:
+        parser: An argparse.ArgumentParser.
+        create_group: Whether or not to create a subgroup for BTN API options.
+            Defaults to True.
+
+    Returns:
+        Either the argparse.ArgumentParser or the subgroup that was implicitly
+            created.
+    """
     if create_group:
         target = parser.add_argument_group("BTN API options")
     else:
@@ -810,12 +1233,36 @@ def add_arguments(parser, create_group=True):
 
 
 class API(object):
+    """An API to BTN, and associated data cache.
 
+    Attributes:
+        cache_path: The path to the data cache directory.
+        key: The user's API key.
+        auth: The user's "auth" string.
+        passkey: The user's BTN passkey.
+        authkey: The user's "authkey" string.
+        token_rate: The `rate` parameter to `token_bucket`.
+        token_period: The `period` parameter to `token_bucket`.
+        api_token_rate: The `rate` parameter to `api_token_bucket`.
+        api_token_period: The `period` parameter to `api_token_bucket`.
+        store_raw_torrent: Whether or not to cache torrent metafiles to disk,
+            whenever they are fetched.
+        token_bucket: An instance of tbucket.TokenBucket which controls access
+            to most HTTP requests to BTN, such as when downloading torrent
+            metafiles.
+        api_token_bucket: An instance of tbucket.TimeSeriesTokenBucket which
+            controls access to the API.
+    """
+
+    """The protocol scheme used to access the API."""
     SCHEME = "https"
 
+    """The hostname of the BTN website."""
     HOST = "broadcasthe.net"
 
+    """The hostname of the BTN API."""
     API_HOST = "api.broadcasthe.net"
+    """The HTTP path to the BTN API."""
     API_PATH = "/"
 
     DEFAULT_TOKEN_RATE = 20
@@ -826,6 +1273,16 @@ class API(object):
 
     @classmethod
     def from_args(cls, parser, args):
+        """Helper function to create an API from command-line arguments.
+
+        This is intended to be used with a parser which has been configured
+        with `add_arguments()`.
+
+        Args:
+            parser: An argparse.ArgumentParser.
+            args: An argparse.Namespace resulting from calling `parse_args()`
+                on the given parser.
+        """
         return cls(cache_path=args.btn_cache_path)
 
     def __init__(self, key=None, passkey=None, authkey=None,
@@ -890,29 +1347,38 @@ class API(object):
 
     @property
     def metadata_db_path(self):
+        """The path to metadata.db."""
         if self.cache_path:
             return os.path.join(self.cache_path, "metadata.db")
         return None
 
     @property
     def user_db_path(self):
+        """The path to user.db."""
         if self.cache_path:
             return os.path.join(self.cache_path, "user.db")
         return None
 
     @property
     def config_path(self):
+        """The path to config.yaml."""
         if self.cache_path:
             return os.path.join(self.cache_path, "config.yaml")
         return None
 
     @property
     def raw_torrent_cache_path(self):
+        """The path to the directory of cached torrent metafiles."""
         if self.cache_path:
             return os.path.join(self.cache_path, "torrents")
 
     @property
     def db(self):
+        """A thread-local apsw.Connection.
+
+        The primary database will be the metadata database. The user database
+        will be attached under the schema name "user".
+        """
         db = getattr(self._local, "db", None)
         if db is not None:
             return db
@@ -943,6 +1409,18 @@ class API(object):
 
     @contextlib.contextmanager
     def begin(self, mode="immediate"):
+        """Gets a context manager for a BEGIN IMMEDIATE transaction.
+
+        Args:
+            mode: The transaction mode. This will be directly used in the
+                command to begin the transaction: "BEGIN <mode>". Defaults to
+                "IMMEDIATE".
+
+        Returns:
+            A context manager for the transaction. If the context succeeds, the
+                context manager will issue COMMIT. If it fails, the manager
+                will issue ROLLBACK.
+        """
         self.db.cursor().execute("begin %s" % mode)
         try:
             yield
@@ -959,13 +1437,28 @@ class API(object):
 
     @property
     def announce_urls(self):
+        """Yields all user-specific announce URLs currently used by BTN."""
         yield self.mk_url("landof.tv", "%s/announce" % self.passkey)
 
     @property
     def endpoint(self):
+        """The HTTP endpoint to the API."""
         return self.mk_url(self.API_HOST, self.API_PATH)
 
     def call_url(self, method, url, **kwargs):
+        """A helper function to make a normal HTTP call to the BTN site.
+
+        This will consume a token from `token_bucket`, blocking if necessary.
+
+        Args:
+            method: A `requests.method` to use when calling (i.e., either
+                `requests.get` or `requests.post`).
+            url: The URL to call.
+            **kwargs: The kwargs to pass to the `requests` method.
+
+        Returns:
+            The `requests.response`.
+        """
         if self.token_bucket:
             self.token_bucket.consume(1)
         log().debug("%s", url)
@@ -975,17 +1468,81 @@ class API(object):
         return response
 
     def call(self, method, path, qdict, **kwargs):
+        """A helper function to make a normal HTTP call to the BTN site.
+
+        This will consume a token from `token_bucket`, blocking if necessary.
+
+        Args:
+            method: A `requests.method` to us ewhen calling (i.e., either
+                `requests.get` or `requests.post`).
+            path: The HTTP path to the URL to call.
+            qdict: A dictionary of query parameters.
+            **kwargs: The kwargs to pass to the `requests` method.
+
+        Returns:
+            The `requests.response`.
+        """
         return self.call_url(
             method, self.mk_url(self.HOST, path, **qdict), **kwargs)
 
     def get(self, path, **qdict):
+        """A helper function to make a normal HTTP GET call to the BTN site.
+
+        This will consume a token from `token_bucket`, blocking if necessary.
+
+        Args:
+            path: The HTTP path to the URL to call.
+            **qdict: A dictionary of query parameters.
+
+        Returns:
+            The `requests.response`.
+        """
         return self.call(requests.get, path, qdict)
 
     def get_url(self, url, **kwargs):
+        """A helper function to make a normal HTTP GET call to the BTN site.
+
+        This will consume a token from `token_bucket`, blocking if necessary.
+
+        Args:
+            url: The full URL to call.
+            **kwargs: The kwargs to pass to `requests.get`.
+
+        Returns:
+            The `requests.response`.
+        """
         return self.call_url(requests.get, url, **kwargs)
 
     def call_api(self, method, *params, leave_tokens=None,
                  block_on_token=None, consume_token=None):
+        """A low-level function to call the API.
+
+        This may consume a token from `api_token_bucket`, blocking if
+        necessary.
+
+        Args:
+            method: The string name of the API method to call.
+            *params: The parameters to the API method. Parameters may be either
+                strings or numbers.
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+
+        Returns:
+            The result of the API call. This may be any JSON object, parsed as
+                a python object.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         if block_on_token is None:
             block_on_token = True
         if consume_token is None:
@@ -1038,11 +1595,36 @@ class API(object):
         return response["result"]
 
     def get_global(self, name):
+        """Gets a value from the "global" table in the user database.
+
+        Values in the "global" are stored with BLOB affinity, so the return
+        value may be of any data type that can be stored in SQLite.
+
+        This function only issues SELECT against the database; no transaction
+        is used.
+
+        Args:
+            name: The string name of the global value entry.
+
+        Returns:
+            The value from the "global" table, or None if no matching row
+                exists.
+        """
         row = self.db.cursor().execute(
             "select value from user.global where name = ?", (name,)).fetchone()
         return row[0] if row else None
 
     def set_global(self, name, value):
+        """Sets a value in the "global" table in the user database.
+
+        This function issues a SAVEPOINT / DML / RELEASE sequence to the
+        database.
+
+        Args:
+            name: The string name of the global value entry.
+            value: The value of the global value entry. May be any data type
+                that can be coerced in SQLite.
+        """
         with self.db:
             self.db.cursor().execute(
                 "insert or replace into user.global (name, value) "
@@ -1050,11 +1632,28 @@ class API(object):
                 (name, value))
 
     def delete_global(self, name):
+        """Deletes a value from the "global" table in the user database.
+
+        This function issues a SAVEPOINT / DML / RELEASE sequence to the
+        database.
+
+        Args:
+            name: The string name of the global value entry.
+        """
         with self.db:
             self.db.cursor().execute(
                 "delete from user.global where name = ?", (name,))
 
     def get_changestamp(self):
+        """Gets a new changestamp from the increasing sequence in the database.
+
+        This function issues a SAVEPOINT / DML / RELEASE sequence to the
+        database.
+
+        Returns:
+            An integer changestamps, unique and larger than the result of any
+                previous call to `get_changestamp()` for this database.
+        """
         with self.db:
             # Workaround so savepoint behaves like begin immediate
             self.db.cursor().execute(
@@ -1069,16 +1668,54 @@ class API(object):
             self.set_global("changestamp", changestamp)
             return changestamp
 
-    def _from_db(self, id):
-        return TorrentEntry._from_db(self, id)
-
     def getTorrentsJson(self, results=10, offset=0, leave_tokens=None,
                         block_on_token=None, consume_token=None, **kwargs):
+        """Issues a "getTorrents" API call, and return the result as parsed
+        JSON.
+
+        Args:
+            results: The maximum number of results to return. Defaults to 10.
+            offset: The offset of the results to return, from the list of all
+                matching torrent entries. Defaults to 0.
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+            **kwargs: A dictionary of filter parameters. See
+                http://apidocs.broadcasthe.net/apigen/class-btnapi.html
+                for filter semantics.
+
+        Returns:
+            A dict of {"results": total number of results matching the filters,
+                "torrents": a list of parsed JSON torrent entries}.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         return self.call_api(
             "getTorrents", kwargs, results, offset, leave_tokens=leave_tokens,
             block_on_token=block_on_token, consume_token=consume_token)
 
     def _torrent_entry_from_json(self, tj):
+        """Create a TorrentEntry from parsed JSON.
+
+        This always creates a new `TorrentEntry`, `Group` and `Series` object.
+        These objects are not cached.
+
+        Args:
+            tj: A parsed JSON object, as returned from "getTorrents" or
+                "getTorrentById".
+
+        Returns:
+            A TorrentEntry object.
+        """
         series = Series(
             self, id=int(tj["SeriesID"]), name=tj["Series"],
             banner=tj["SeriesBanner"], poster=tj["SeriesPoster"],
@@ -1098,6 +1735,19 @@ class API(object):
             source=tj["Source"], time=int(tj["Time"]))
 
     def getTorrentsCached(self, results=None, offset=None, **kwargs):
+        """Issues a synthetic "getTorrents" call against the local cache.
+
+        Args:
+            results: The maximum number of results to return. Defaults to 10.
+            offset: The offset of the results to return, from the list of all
+                matching torrent entries. Defaults to 0.
+            **kwargs: A dictionary of filter parameters. See
+                http://apidocs.broadcasthe.net/apigen/class-btnapi.html
+                for filter semantics.
+
+        Returns:
+            A list of `TorrentEntry` objects.
+        """
         params = []
         if "id" in kwargs:
             params.append(("torrent_entry.id = ?", kwargs["id"]))
@@ -1175,9 +1825,36 @@ class API(object):
         with self.db:
             c = self.db.cursor()
             c.execute(query, values)
-            return [self._from_db(r[0]) for r in c]
+            return [TorrentEntry._from_db(self, r[0]) for r in c]
 
     def getTorrents(self, results=10, offset=0, **kwargs):
+        """Issues a "getTorrents" API call.
+
+        Args:
+            results: The maximum number of results to return. Defaults to 10.
+            offset: The offset of the results to return, from the list of all
+                matching torrent entries. Defaults to 0.
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+            **kwargs: A dictionary of filter parameters. See
+                http://apidocs.broadcasthe.net/apigen/class-btnapi.html
+                for filter semantics.
+
+        Returns:
+            A `SearchResult` object.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         sr_json = self.getTorrentsJson(
             results=results, offset=offset, **kwargs)
         tes = []
@@ -1210,14 +1887,68 @@ class API(object):
 
     def getTorrentByIdJson(self, id, leave_tokens=None, block_on_token=None,
                            consume_token=None):
+        """Issues a "getTorrentById" API call, and return the result as parsed
+        JSON.
+
+        Args:
+            id: The id of the torrent entry on BTN.
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+
+        Returns:
+            A torrent entry as parsed JSON.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         return self.call_api(
             "getTorrentById", id, leave_tokens=leave_tokens,
             block_on_token=block_on_token, consume_token=consume_token)
 
     def getTorrentByIdCached(self, id):
-        return self._from_db(id)
+        """Get a `TorrentEntry` from the local cache.
+
+        Args:
+            id: The id of the torrent entry on BTN.
+
+        Returns:
+            A `TorrentEntry`, or None if the given id is not found in the local
+                cache.
+        """
+        return TorrentEntry._from_db(self, id)
 
     def getTorrentById(self, id):
+        """Issues a "getTorrentById" API call.
+
+        Args:
+            id: The id of the torrent entry on BTN.
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+
+        Returns:
+            A `TorrentEntry`, or None if the requested id was not found.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         tj = self.getTorrentByIdJson(id)
         te = self._torrent_entry_from_json(tj) if tj else None
         if te:
@@ -1227,11 +1958,46 @@ class API(object):
 
     def getUserSnatchlistJson(self, results=10, offset=0, leave_tokens=None,
                               block_on_token=None, consume_token=None):
+        """Issues a "getUserSnatchlist" API call, and return the result as
+        parsed JSON.
+
+        Args:
+            results: The maximum number of results to return. Defaults to 10.
+            offset: The offset of the results to return, from the list of all
+                matching torrent entries. Defaults to 0.
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+
+        Returns:
+            ???
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         return self.call_api(
             "getUserSnatchlist", results, offset, leave_tokens=leave_tokens,
             block_on_token=block_on_token, consume_token=consume_token)
 
     def _user_info_from_json(self, j):
+        """Create a `UserInfo` from parsed JSON.
+
+        This always creates a new `UserInfo`. These objects are not cached.
+
+        Args:
+            j: A parsed JSON object, as returned from "userInfo".
+
+        Returns:
+            A `UserInfo` object.
+        """
         return UserInfo(
             self, id=int(j["UserID"]), bonus=int(j["Bonus"]),
             class_name=j["Class"], class_level=int(j["ClassLevel"]),
@@ -1245,14 +2011,63 @@ class API(object):
 
     def userInfoJson(self, leave_tokens=None, block_on_token=None,
                      consume_token=None):
+        """Issues a "userInfo" API call, and return the result as
+        parsed JSON.
+
+        Args:
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+
+        Returns:
+            A user info parsed JSON dictionary.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         return self.call_api(
             "userInfo", leave_tokes=leave_tokens,
             block_on_token=block_on_token, consume_token=consume_token)
 
     def userInfoCached(self):
+        """Gets a `UserInfo` from the local cache.
+
+        Returns:
+            A `UserInfo` object about the local user, or None of none was found
+                in the local cache.
+        """
         return UserInfo._from_db(self)
 
     def userInfo(self):
+        """Issues a "userInfo" API call.
+
+        Args:
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+
+        Returns:
+            A `UserInfo` object.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+        """
         uj = self.userInfoJson()
         ui = self._user_info_from_json(uj) if uj else None
         if ui:
