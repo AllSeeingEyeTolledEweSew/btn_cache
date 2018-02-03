@@ -38,6 +38,7 @@ __all__ = [
     "SearchResult",
     "Error",
     "APIError",
+    "HTTPError",
     "TorrentEntry",
     "FileInfo",
     "Group",
@@ -1186,6 +1187,18 @@ class Error(Exception):
     pass
 
 
+class HTTPError(Error):
+    """An HTTP-level error.
+
+    Attributes:
+        code: The numeric error code.
+    """
+
+    def __init__(self, message, code):
+        super(HTTPError, self).__init__(message)
+        self.code = code
+
+
 class APIError(Error):
     """An error returned from the API.
 
@@ -1458,13 +1471,16 @@ class API(object):
 
         Returns:
             The `requests.response`.
+
+        Raises:
+            HTTPError: If there was an HTTP-level error.
         """
         if self.token_bucket:
             self.token_bucket.consume(1)
         log().debug("%s", url)
         response = method(url, **kwargs)
         if response.status_code != requests.codes.ok:
-            raise APIError(response.text, response.status_code)
+            raise HTTPError(response.text, response.status_code)
         return response
 
     def call(self, method, path, qdict, **kwargs):
@@ -1481,6 +1497,9 @@ class API(object):
 
         Returns:
             The `requests.response`.
+
+        Raises:
+            HTTPError: If there was an HTTP-level error.
         """
         return self.call_url(
             method, self.mk_url(self.HOST, path, **qdict), **kwargs)
@@ -1496,6 +1515,9 @@ class API(object):
 
         Returns:
             The `requests.response`.
+
+        Raises:
+            HTTPError: If there was an HTTP-level error.
         """
         return self.call(requests.get, path, qdict)
 
@@ -1510,6 +1532,9 @@ class API(object):
 
         Returns:
             The `requests.response`.
+
+        Raises:
+            HTTPError: If there was an HTTP-level error.
         """
         return self.call_url(requests.get, url, **kwargs)
 
@@ -1542,6 +1567,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         if block_on_token is None:
             block_on_token = True
@@ -1575,7 +1601,7 @@ class API(object):
         log().debug("%s -> %s", data, log_text)
 
         if response.status_code != requests.codes.ok:
-            raise APIError(response.text, response.status_code)
+            raise HTTPError(response.text, response.status_code)
 
         response = response.json()
         if "error" in response:
@@ -1698,6 +1724,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         return self.call_api(
             "getTorrents", kwargs, results, offset, leave_tokens=leave_tokens,
@@ -1855,6 +1882,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         sr_json = self.getTorrentsJson(
             results=results, offset=offset, leave_tokens=leave_tokens,
@@ -1902,6 +1930,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         return self.call_api(
             "getTorrentById", id, leave_tokens=leave_tokens,
@@ -1942,6 +1971,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         tj = self.getTorrentByIdJson(
             id, leave_tokens=leave_tokens, block_on_token=block_on_token,
@@ -1978,6 +2008,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         return self.call_api(
             "getUserSnatchlist", results, offset, leave_tokens=leave_tokens,
@@ -2028,6 +2059,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         return self.call_api(
             "userInfo", leave_tokes=leave_tokens,
@@ -2064,6 +2096,7 @@ class API(object):
             WouldBlock: When block_on_token is False and no tokens are
                 available.
             APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
         """
         uj = self.userInfoJson(
             leave_tokens=leave_tokens, block_on_token=block_on_token,
