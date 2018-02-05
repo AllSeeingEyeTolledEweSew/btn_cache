@@ -1609,13 +1609,14 @@ class API(object):
             message = error["message"]
             code = error["code"]
             if code == APIError.CODE_CALL_LIMIT_EXCEEDED:
-                def fill(_, as_of, n):
+                def fill(_, query_time, n):
                     period = self.api_token_bucket.period
-                    start = as_of - period
+                    start = query_time - period
                     return [
                         start + period * (i + 1) / (n + 1) for i in range(n)]
                 if self.api_token_bucket:
-                    self.api_token_bucket.set(0, as_of=call_time, fill=fill)
+                    self.api_token_bucket.set(
+                        0, query_time=call_time, fill=fill)
             raise APIError(message, code)
 
         return response["result"]
