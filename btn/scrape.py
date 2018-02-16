@@ -1,6 +1,9 @@
 # The author disclaims copyright to this source code. Please see the
 # accompanying UNLICENSE file.
 
+"""Several long-lived-daemon-style classes to scrape BTN and update the cache.
+"""
+
 import feedparser
 import logging
 import os
@@ -13,10 +16,12 @@ import btn
 
 
 def log():
+    """Gets a module-level logger."""
     return logging.getLogger(__name__)
 
 
 def get_int(api, key):
+    """Get an integer global value from a `btn.API`."""
     try:
         return int(api.get_global(key))
     except (ValueError, TypeError):
@@ -24,6 +29,7 @@ def get_int(api, key):
 
 
 def set_int(api, key, value):
+    """Set an integer global value on a `btn.API`."""
     if value is None:
         api.delete_global(key)
     else:
@@ -31,6 +37,34 @@ def set_int(api, key, value):
 
 
 def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
+    """Marks torrent entries as deleted, appropriate to a search result.
+
+    When we receive a search result for getTorrents with no filters, the result
+    should be a contiguous slice of all torrents on the site, ordered by id.
+    Here we search for any torrent entries in the local cache that ought to be
+    in the results (the id is between the min and max id returned), but isn't
+    found there. We mark all these torrent entries as deleted.
+
+    In fact, this is the only way to know when a torrent entry has been deleted
+    from the site.
+
+    As a special case, if this is known to be the last page of results on the
+    site, any torrent entries with ids smaller than the minimum are marked as
+    deleted.
+
+    Args:
+        api: A `btn.API` instance.
+        offset: The offset parameter that was passed to getTorrents.
+        sr: A `btn.SearchResult` returned as a result of getTorrents with no
+            filters, and the supplied offset.
+        changestamp: An integer changestamp. If None, a new changestamp will be
+            generated.
+
+    Returns:
+        A (list_of_torrent_entry_ids, is_end) tuple. The list of torrent entry
+            ids is sorted in descending order. is_end specifies whether `sr`
+            was determined to represent the last page of results.
+    """
     ids = sorted((te.id for te in sr.torrents), key=lambda i: -i)
     is_end = offset + len(ids) >= sr.results
 
@@ -74,6 +108,20 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
 
 
 class MetadataScraper(object):
+    """A long-lived daemon that updates cached data about all torrents.
+
+    This daemon calls getTorrents with no filters and varying offset. The
+    intent is to discover deleted torrents, and freshen metadata.
+
+    This daemon will consume as many tokens from `api.api_token_bucket` as
+    possible, up to a configured limit. The intent of this is to defer token
+    use to `MetadataTipScraper`.
+
+    Attributes:
+        api: A `btn.API` instance.
+        target_tokens: A number of tokens to leave as leftover in
+            `api.api_token_bucket`.
+    """
 
     KEY_OFFSET = "scrape_next_offset"
     KEY_RESULTS = "scrape_last_results"
