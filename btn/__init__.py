@@ -903,7 +903,7 @@ class TorrentEntry(object):
     @property
     def link(self):
         """A link to the torrent metafile."""
-        return self.api.mk_url(
+        return self.api._mk_url(
             self.api.HOST, "/torrents.php", action="download",
             authkey=self.api.authkey, torrent_pass=self.api.passkey,
             id=self.id)
