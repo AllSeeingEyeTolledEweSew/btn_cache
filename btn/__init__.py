@@ -985,7 +985,7 @@ class TorrentEntry(object):
                     self._raw_torrent = f.read()
                 return self._raw_torrent
             log().debug("Fetching raw torrent for %s", repr(self))
-            response = self.api.get_url(self.link)
+            response = self.api._get_url(self.link)
             if response.status_code != requests.codes.ok:
                 raise APIError(response.text, response.status_code)
             self._got_raw_torrent(response.content)
