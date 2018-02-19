@@ -641,6 +641,9 @@ class TorrentEntry(object):
                 "create index if not exists torrent_entry_on_info_hash "
                 "on torrent_entry (info_hash)")
             c.execute(
+                "create index if not exists torrent_entry_on_time "
+                "on torrent_entry (time)")
+            c.execute(
                 "create table if not exists codec ("
                 "id integer primary key, "
                 "name text not null)")

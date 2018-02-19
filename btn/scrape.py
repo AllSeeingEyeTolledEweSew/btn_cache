@@ -40,16 +40,16 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
     """Marks torrent entries as deleted, appropriate to a search result.
 
     When we receive a search result for getTorrents with no filters, the result
-    should be a contiguous slice of all torrents on the site, ordered by id.
+    should be a contiguous slice of all torrents on the site, ordered by time.
     Here we search for any torrent entries in the local cache that ought to be
-    in the results (the id is between the min and max id returned), but isn't
-    found there. We mark all these torrent entries as deleted.
+    in the results (the id is between the oldest and youngest id returned), but
+    isn't found there. We mark all these torrent entries as deleted.
 
     In fact, this is the only way to know when a torrent entry has been deleted
     from the site.
 
     As a special case, if this is known to be the last page of results on the
-    site, any torrent entries with ids smaller than the minimum are marked as
+    site, any torrent entries older than the oldest returned are marked as
     deleted.
 
     Args:
@@ -61,33 +61,36 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
             generated.
 
     Returns:
-        A (list_of_torrent_entry_ids, is_end) tuple. The list of torrent entry
-            ids is sorted in descending order. is_end specifies whether `sr`
-            was determined to represent the last page of results.
+        A (list_of_torrent_entries, is_end) tuple. The list of torrent entries
+            is sorted by time descending. is_end specifies whether `sr` was
+            determined to represent the last page of results.
     """
-    ids = sorted((te.id for te in sr.torrents), key=lambda i: -i)
-    is_end = offset + len(ids) >= sr.results
+    entries = sorted(sr.torrents, key=lambda te: (-te.time, -te.id))
+    is_end = offset + len(entries) >= sr.results
 
-    if ids:
+    if entries:
+        newest = entries[0]
+        oldest = entries[-1]
         api.db.cursor().execute(
             "create temp table ids (id integer not null primary key)")
         api.db.cursor().executemany(
             "insert into temp.ids (id) values (?)",
-            [(id,) for id in ids])
+            [(entry.id,) for entry in entries])
 
         torrent_entries_to_delete = set()
         groups_to_check = set()
         if is_end:
             for id, group_id, in api.db.cursor().execute(
                     "select id, group_id from torrent_entry "
-                    "where id < ? and not deleted", (ids[-1],)):
+                    "where time <= ? and id < ? and not deleted",
+                    (oldest.time, oldest.id)):
                 torrent_entries_to_delete.add(id)
                 groups_to_check.add(group_id)
         for id, group_id, in api.db.cursor().execute(
                 "select id, group_id from torrent_entry "
-                "where (not deleted) and id < ? and id > ? and "
+                "where (not deleted) and time < ? and time > ? and "
                 "id not in (select id from temp.ids)",
-                (ids[0], ids[-1])):
+                (newest.time, oldest.time)):
             torrent_entries_to_delete.add(id)
             groups_to_check.add(group_id)
 
@@ -104,7 +107,7 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
             btn.Group._maybe_delete(
                 api, *list(groups_to_check), changestamp=changestamp)
 
-    return ids, is_end
+    return entries, is_end
 
 
 class MetadataScraper(object):
@@ -229,9 +232,12 @@ class MetadataScraper(object):
 class MetadataTipScraper(object):
 
     KEY_LAST = "tip_last_scraped"
+    KEY_LAST_TS = "tip_last_scraped_ts"
     KEY_OFFSET = "tip_scrape_offset"
     KEY_OLDEST = "tip_scrape_oldest"
+    KEY_OLDEST_TS = "tip_scrape_oldest_ts"
     KEY_NEWEST = "tip_scrape_newest"
+    KEY_NEWEST_TS = "tip_scrape_newest_ts"
 
     def __init__(self, api, once=False):
         if api.key is None:
@@ -264,43 +270,60 @@ class MetadataTipScraper(object):
         return ids
 
     def update_scrape_results_locked(self, offset, sr):
-        ids, is_end = apply_contiguous_results_locked(self.api, offset, sr)
+        entries, is_end = apply_contiguous_results_locked(self.api, offset, sr)
 
-        last_scraped = get_int(self.api, self.KEY_LAST)
-        oldest = get_int(self.api, self.KEY_OLDEST)
-        newest = get_int(self.api, self.KEY_NEWEST)
+        last_scraped_id = get_int(self.api, self.KEY_LAST)
+        last_scraped_ts = get_int(self.api, self.KEY_LAST_TS)
+        oldest_id = get_int(self.api, self.KEY_OLDEST)
+        oldest_ts = get_int(self.api, self.KEY_OLDEST_TS)
+        newest_id = get_int(self.api, self.KEY_NEWEST)
+        newest_ts = get_int(self.api, self.KEY_NEWEST_TS)
 
-        if newest is None or (ids and ids[0] >= newest):
-            newest = ids[0]
+        if newest_ts is None or (entries and (
+                (entries[0].time, entries[0].id) >= (newest_ts, newest_id))):
+            newest_id = entries[0].id
+            newest_ts = entries[0].time
 
         done = False
         # Ensure we got a good page overlap.
-        if oldest is None or (ids and ids[0] >= oldest):
+        if oldest_ts is None or (entries and (
+                (entries[0].time, entries[0].id) >= (oldest_ts, oldest_id))):
             if is_end:
                 log().info("We reached the oldest torrent entry.")
                 done = True
-            elif last_scraped is not None and ids[-1] <= last_scraped:
-                log().info("Caught up. Current as of %s.", newest)
+            elif last_scraped_ts is not None and (
+                    (entries[-1].time, entries[-1].id) <=
+                    (last_scraped_ts, last_scraped_id)):
+                log().info("Caught up. Current as of %s.", newest_id)
                 done = True
-            elif oldest is None or ids[-1] < oldest:
-                oldest = ids[-1]
-            offset += len(ids) - 1
+            elif oldest_ts is None or (
+                    (entries[-1].time, entries[-1].id) <
+                    (oldest_ts, oldest_id)):
+                oldest_id = entries[-1].id
+                oldest_ts = entries[-1].time
+            offset += len(entries) - 1
         else:
             log().info("Missed page overlap, backing off.")
-            offset -= len(ids) // 2
+            offset -= len(entries) // 2
             if offset <= 0:
                 offset = 0
-                oldest = None
+                oldest_id = None
+                oldest_ts = None
 
         if done:
-            set_int(self.api, self.KEY_LAST, newest)
+            set_int(self.api, self.KEY_LAST, newest_id)
+            set_int(self.api, self.KEY_LAST_TS, newest_ts)
             set_int(self.api, self.KEY_OFFSET, None)
             set_int(self.api, self.KEY_OLDEST, None)
+            set_int(self.api, self.KEY_OLDEST_TS, None)
             set_int(self.api, self.KEY_NEWEST, None)
+            set_int(self.api, self.KEY_NEWEST_TS, None)
         else:
             set_int(self.api, self.KEY_OFFSET, offset)
-            set_int(self.api, self.KEY_OLDEST, oldest)
-            set_int(self.api, self.KEY_NEWEST, newest)
+            set_int(self.api, self.KEY_OLDEST, oldest_id)
+            set_int(self.api, self.KEY_OLDEST_TS, oldest_ts)
+            set_int(self.api, self.KEY_NEWEST, newest_id)
+            set_int(self.api, self.KEY_NEWEST_TS, newest_ts)
 
         return done
 
@@ -314,7 +337,7 @@ class MetadataTipScraper(object):
                 log().debug("No current scrape.")
                 c = self.api.db.cursor().execute(
                     "select id from torrent_entry where not deleted "
-                    "order by id desc limit 1000")
+                    "order by time desc, id desc limit 1000")
                 db_ids = [id for id, in c]
 
         if offset is None:
