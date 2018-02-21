@@ -97,6 +97,10 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
         api.db.cursor().execute("drop table temp.ids")
 
         if torrent_entries_to_delete:
+            log().debug(
+                "Deleting torrent entries: %s",
+                sorted(torrent_entries_to_delete))
+
             if changestamp is None:
                 changestamp = api.get_changestamp()
 

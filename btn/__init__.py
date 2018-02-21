@@ -171,14 +171,24 @@ class Series(object):
         if not ids:
             return
         with api.db:
+            rows = api.db.cursor().execute(
+                "select id from series "
+                "where id in (%s) and not deleted and not exists ("
+                "select id from torrent_entry_group "
+                "where series_id = series.id and not deleted)" %
+                ",".join(["?"] * len(ids)),
+                tuple(ids))
+            series_ids_to_delete = set()
+            for id, in rows:
+                series_ids_to_delete.add(id)
+            if not series_ids_to_delete:
+                return
+            log().debug("Deleting series: %s", sorted(series_ids_to_delete))
             if changestamp is None:
                 changestamp = api.get_changestamp()
             api.db.cursor().executemany(
-                "update series set deleted = 1, updated_at = ? "
-                "where id = ? and not deleted and not exists ("
-                "select id from torrent_entry_group "
-                "where series_id = series.id and not deleted)",
-                [(changestamp, id) for id in ids])
+                "update series set deleted = 1, updated_at = ? where id = ?",
+                [(changestamp, id) for id in series_ids_to_delete])
 
     def __init__(self, api, id=None, imdb_id=None, name=None, banner=None,
                  poster=None, tvdb_id=None, tvrage_id=None, youtube_trailer=None):
@@ -389,6 +399,7 @@ class Group(object):
                 series_ids_to_check.add(series_id)
             if not group_ids_to_delete:
                 return
+            log().debug("Deleting groups: %s", sorted(group_ids_to_delete))
             if changestamp is None:
                 changestamp = api.get_changestamp()
             api.db.cursor().executemany(
