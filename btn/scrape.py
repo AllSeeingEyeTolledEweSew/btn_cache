@@ -352,10 +352,12 @@ class MetadataTipScraper(object):
                 return True
             if set(feed_ids) - set(db_ids):
                 log().debug(
-                    "in feed but not in db: %s", set(feed_ids) - set(db_ids))
+                    "in feed but not in db: %s",
+                    sorted(set(feed_ids) - set(db_ids)))
             if set(db_ids) - set(feed_ids):
                 log().debug(
-                    "in db but not in feed: %s", set(db_ids) - set(feed_ids))
+                    "in db but not in feed: %s",
+                    sorted(set(db_ids) - set(feed_ids)))
             offset = 0
 
         log().info("Scraping at offset %s", offset)
