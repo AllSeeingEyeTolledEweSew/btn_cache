@@ -9,6 +9,7 @@ it's difficult to use the API for much. This module is focused on maintaining a
 cache of data from BTN in a local SQLite database.
 """
 
+import calendar
 import contextlib
 import json as json_lib
 import logging
@@ -273,6 +274,9 @@ class Group(object):
             visually grouped together on the BTN site.
         series: The Series object this Group belongs to.
     """
+
+    CATEGORY_EPISODE = "Episode"
+    CATEGORY_SEASON = "Season"
 
     @classmethod
     def _create_schema(cls, api):
@@ -598,9 +602,6 @@ class TorrentEntry(object):
         time: The UNIX time (seconds since epoch) that this torrent was
             uploaded to the tracker.
     """
-
-    #CATEGORY_EPISODE = "Episode"
-    #CATEGORY_SEASON = "Season"
 
     #GROUP_EPISODE_REGEX = re.compile(
     #    r"S(?P<season>\d+)(?P<episodes>(E\d+)+)$")
@@ -1162,6 +1163,147 @@ class UserInfo(object):
         return "<UserInfo %s \"%s\">" % (self.id, self.username)
 
 
+class Snatch(object):
+    """Information about a user snatchlist entry.
+
+    Attributes:
+        api: The API instance to which this TorrentEntry is tied.
+        id: The integer torrent id.
+        downloaded: The amount the user has downloaded in bytes.
+        uploaded: The amount the user has uploaded in bytes.
+        seeding: True if the user is currently seeding the torrent.
+        seed_time: The number of seconds the user has been seeding the torrent.
+        snatch_time: The UNIX timestamp when the torrent was snatched.
+        hnr_removed: Whether any HnR status was removed by staff.
+        torrent_entry: The associated TorrentEntry.
+    """
+
+    @classmethod
+    def _create_schema(cls, api):
+        """Initializes the database schema of an API instance.
+
+        This should only be called at initialization time.
+
+        This will perform a SAVEPOINT / DML / RELEASE command sequence on the
+        database.
+
+        Args:
+            api: An API instance.
+        """
+        with api.db:
+            api.db.cursor().execute(
+                "create table if not exists user.snatchlist ("
+                "  id integer primary key,"
+                "  downloaded integer,"
+                "  uploaded integer,"
+                "  seed_time integer,"
+                "  seeding tinyint,"
+                "  snatch_time integer, "
+                "  hnr_removed tinyint)")
+
+    @classmethod
+    def _from_db(cls, api, id):
+        """Creates a Snatch from the cached data in an API instance.
+
+        This just deserializes data from the API's database into a python
+        object; it doesn't make any API calls.
+
+        A new Snatch object is always created from this function. Snatch
+        objects aren't cached for reuse.
+
+        This calls SAVEPOINT / SELECT / RELEASE on the database.
+
+        Args:
+            api: An API instance.
+            id: The integer torrent id.
+
+        Returns:
+            A Snatch representing the snatch metadata for the given torrent,
+                or None if none was found.
+        """
+        c = api.db.cursor()
+        row = c.execute(
+            "select * from user.snatchlist where id = ?", (id,)).fetchone()
+        if not row:
+            return None
+        row = dict(zip((n for n, t in c.getdescription()), row))
+        return cls(api, **row)
+
+    def __init__(self, api, id=None, downloaded=None, uploaded=None,
+                 seed_time=None, snatch_time=None, seeding=None,
+                 hnr_removed=None):
+        self.api = api
+
+        self.id = id
+        self.downloaded = downloaded
+        self.uploaded = uploaded
+        self.seed_time = seed_time
+        self.seeding = bool(seeding)
+        self.snatch_time = snatch_time
+        self._hnr_removed = hnr_removed
+
+    @property
+    def torrent_entry(self):
+        """Returns the associated TorrentEntry."""
+        return self.api.getTorrentByIdCached(self.id)
+
+    @property
+    def hnr_removed(self):
+        if self._hnr_removed is None:
+            r = self.api.db.cursor().execute(
+                "select hnr_removed from user.snatchlist where id = ?",
+                (self.id,)).fetchone()
+            self._hnr_removed = bool(r and r[0])
+        return self._hnr_removed
+
+    def serialize(self):
+        """Serialize the Snatch's data to its API's database.
+
+        This performs a SAVEPOINT / DML / RELEASE sequence against the API.
+        """
+        with self.api.db:
+            c = self.api.db.cursor()
+            c.execute(
+                "insert or replace into user.snatchlist ("
+                "id, downloaded, uploaded, seed_time, seeding, snatch_time, "
+                "hnr_removed) "
+                "values (?, ?, ?, ?, ?, ?, ?)",
+                (self.id, self.downloaded, self.uploaded, self.seed_time,
+                 self.seeding, self.snatch_time, self.hnr_removed))
+
+    @property
+    def ratio(self):
+        if not self.downloaded:
+            return None
+        return float(self.uploaded) / self.downloaded
+
+    def is_potential_hnr(self):
+        """Returns True if this Snatch would be a Hit-and-Run if not seeding"""
+        if self.torrent_entry is None:
+            return False
+        if (self.downloaded < self.torrent_entry.size *
+                TORRENT_HISTORY_FRACTION):
+            return False
+        if self.torrent_entry.group.category == Group.CATEGORY_EPISODE:
+            if self.ratio is not None and self.ratio >= EPISODE_SEED_RATIO:
+                return False
+            if self.seed_time >= EPISODE_SEED_TIME:
+                return False
+        elif self.torrent_entry.group.category == Group.CATEGORY_SEASON:
+            if self.ratio is not None and self.ratio >= SEASON_SEED_RATIO:
+                return False
+            if self.seed_time >= SEASON_SEED_TIME:
+                return False
+        return True
+
+    def is_hnr(self):
+        """Returns True if this Snatch represents a real Hit-and-Run."""
+        return self.is_potential_hnr() and not self.seeding
+
+    def __repr__(self):
+        return "<Snatch %s>" % (self.id)
+
+
 class SearchResult(object):
     """The result of a call to `API.getTorrents`.
 
@@ -1424,6 +1566,7 @@ class API(object):
             Group._create_schema(self)
             TorrentEntry._create_schema(self)
             UserInfo._create_schema(self)
+            Snatch._create_schema(self)
             c.execute(
                 "create table if not exists user.global ("
                 "  name text not null,"
@@ -2028,6 +2171,70 @@ class API(object):
         return self.call_api(
             "getUserSnatchlist", results, offset, leave_tokens=leave_tokens,
             block_on_token=block_on_token, consume_token=consume_token)
+
+    def _snatch_from_json(self, j):
+        """Create a Snatch from parsed JSON.
+
+        Args:
+            j: A parsed JSON object, as returned from "getUserSnatchlist".
+
+        Returns:
+            A Snatch object.
+        """
+        return Snatch(
+            self, id=int(j["TorrentID"]), downloaded=int(j["Downloaded"]),
+            uploaded=int(j["Uploaded"]), seed_time=int(j["Seedtime"]),
+            seeding=bool(int(j["IsSeeding"])),
+            snatch_time=calendar.timegm(time.strptime(
+                j["SnatchTime"], "%Y-%m-%d %H:%M:%S")))
+
+    def getUserSnatchlist(self, results=10, offset=0, leave_tokens=None,
+                          block_on_token=None, consume_token=None):
+        """Issues a "getUserSnatchlist" API call.
+
+        Args:
+            results: The maximum number of results to return. Defaults to 10.
+            offset: The offset of the results to return, from the list of all
+                matching torrent entries. Defaults to 0.
+            leave_tokens: Block until we would be able to leave at least this
+                many tokens in `api_token_bucket`, after one is consumed.
+                Defaults to 0.
+            block_on_token: Whether or not to block waiting for a token. If
+                False and no tokens are available, `WouldBlock` is raised.
+                Defaults to True.
+            consume_token: Whether or not to consume a token at all. Defaults
+                to True. This should only be False when you are handling token
+                management outside this function.
+
+        Returns:
+            A `SearchResult` object.
+
+        Raises:
+            WouldBlock: When block_on_token is False and no tokens are
+                available.
+            APIError: When we receive an error from the API.
+            HTTPError: If there was an HTTP-level error.
+        """
+        sr_json = self.getUserSnatchlistJson(
+            results=results, offset=offset, leave_tokens=leave_tokens,
+            block_on_token=block_on_token, consume_token=consume_token)
+
+        snatches = []
+        for sj in (sr_json.get("torrents") or {}).values():
+            snatch = self._snatch_from_json(sj)
+            snatches.append(snatch)
+        while True:
+            try:
+                with self.begin():
+                    for snatch in snatches:
+                        snatch.serialize()
+            except apsw.BusyError:
+                log().warning(
+                    "BusyError while trying to serialize, will retry")
+            else:
+                break
+        snatches = sorted(snatches, key=lambda s: -s.id)
+        return SearchResult(sr_json["results"], snatches)
 
     def _user_info_from_json(self, j):
         """Create a `UserInfo` from parsed JSON.

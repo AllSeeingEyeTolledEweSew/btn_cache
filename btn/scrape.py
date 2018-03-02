@@ -487,3 +487,120 @@ class TorrentFileScraper(object):
     def join(self):
         if self.thread:
             self.thread.join()
+
+
+class SnatchlistScraper(object):
+    """A long-lived daemon that updates the user's snatchlist.
+
+    This daemon calls getUserSnatchlist with no filters and varying offset.
+
+    This daemon will consume as many tokens from `api.api_token_bucket` as
+    possible, up to a configured limit. The intent of this is to defer token
+    use to `MetadataTipScraper`.
+
+    Attributes:
+        api: A `btn.API` instance.
+        target_tokens: A number of tokens to leave as leftover in
+            `api.api_token_bucket`.
+    """
+
+    KEY_OFFSET = "snatchlist_scrape_next_offset"
+    KEY_RESULTS = "snatchlist_scrape_last_results"
+
+    BLOCK_SIZE = 10000
+
+    DEFAULT_TARGET_TOKENS = 0
+    DEFAULT_NUM_THREADS = 10
+
+    def __init__(self, api, target_tokens=None, num_threads=None, once=False):
+        if num_threads is None:
+            num_threads = self.DEFAULT_THREADS
+        if target_tokens is None:
+            target_tokens = self.DEFAULT_TARGET_TOKENS
+
+        if api.key is None:
+            raise ValueError("API key not configured")
+
+        self.api = api
+        self.target_tokens = target_tokens
+        self.num_threads = num_threads
+        self.once = once
+
+        self.lock = threading.RLock()
+        self.tokens = None
+        self.threads = []
+
+    def update_step(self):
+        if self.once:
+            tokens, _, _ = self.api.api_token_bucket.peek()
+            with self.lock:
+                if self.tokens is not None and tokens > self.tokens:
+                    log().info("Tokens refilled, quitting")
+                    return True
+                self.tokens = tokens
+
+        target_tokens = self.target_tokens
+
+        success, _, _, _ = self.api.api_token_bucket.try_consume(
+            1, leave=target_tokens)
+        if not success:
+            return True
+
+        with self.api.begin():
+            offset = get_int(self.api, self.KEY_OFFSET) or 0
+            results = get_int(self.api, self.KEY_RESULTS)
+            next_offset = offset + self.BLOCK_SIZE
+            if results and next_offset > results:
+                next_offset = 0
+            set_int(self.api, self.KEY_OFFSET, next_offset)
+
+        log().info(
+            "Trying update at offset %s, %s tokens left", offset,
+            self.api.api_token_bucket.peek()[0])
+
+        try:
+            sr = self.api.getUserSnatchlist(
+                results=self.BLOCK_SIZE, offset=offset, consume_token=False)
+        except btn.WouldBlock:
+            log().info("Out of tokens, quitting")
+            return True
+        except btn.APIError as e:
+            if e.code == e.CODE_CALL_LIMIT_EXCEEDED:
+                log().debug("Call limit exceeded, quitting")
+                return True
+            else:
+                raise
+
+        with self.api.begin():
+            set_int(self.api, self.KEY_RESULTS, sr.results)
+
+        return False
+
+    def run(self):
+        try:
+            while True:
+                try:
+                    done = self.update_step()
+                except:
+                    log().exception("during update")
+                    done = True
+                if done:
+                    if self.once:
+                        break
+                    else:
+                        time.sleep(60)
+        finally:
+            log().debug("shutting down")
+
+    def start(self):
+        if self.threads:
+            return
+        for i in range(self.num_threads):
+            t = threading.Thread(
+                name="snatchlist-scraper-%d" % i, target=self.run, daemon=True)
+            t.start()
+            self.threads.append(t)
+
+    def join(self):
+        for t in self.threads:
+            t.join()
