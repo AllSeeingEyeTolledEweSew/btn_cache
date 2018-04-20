@@ -530,7 +530,7 @@ class FileInfo(object):
                 "from file_info "
                 "where id = ?",
                 (id,))
-            return (cls(index=r[0], path=r[1], length=r[2]) for r in rows)
+            return tuple(cls(index=r[0], path=r[1], length=r[2]) for r in rows)
 
     @classmethod
     def _from_tobj(cls, tobj):
@@ -792,6 +792,7 @@ class TorrentEntry(object):
 
         self._lock = threading.RLock()
         self._raw_torrent = None
+        self._file_info = None
 
     def serialize(self, changestamp=None):
         """Serialize the TorrentEntry's data to its API's database.
@@ -1009,7 +1010,10 @@ class TorrentEntry(object):
     @property
     def file_info_cached(self):
         """A tuple of cached FileInfo objects from the database."""
-        return FileInfo._from_db(self.api, self.id)
+        with self._lock:
+            if self._file_info is None:
+                self._file_info = FileInfo._from_db(self.api, self.id)
+            return self._file_info
 
     @property
     def torrent_object(self):
