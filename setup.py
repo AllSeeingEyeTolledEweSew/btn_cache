@@ -10,7 +10,7 @@ with open("README") as readme:
 
 setup(
     name="btn",
-    version="1.0.1",
+    version="1.0.2",
     description="API and local cache for broadcasthe.net",
     long_description=documentation,
     author="AllSeeingEyeTolledEweSew",

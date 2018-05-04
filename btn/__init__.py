@@ -1002,8 +1002,10 @@ class TorrentEntry(object):
                 return self._raw_torrent
             log().debug("Fetching raw torrent for %s", repr(self))
             response = self.api._get_url(self.link)
-            if response.status_code != requests.codes.ok:
-                raise APIError(response.text, response.status_code)
+            try:
+                better_bencode.loads(response.content)
+            except Exception as e:
+                raise APIError(str(e), 0)
             self._got_raw_torrent(response.content)
             return self._raw_torrent
 
@@ -1354,9 +1356,10 @@ class HTTPError(Error):
         code: The numeric error code.
     """
 
-    def __init__(self, message, code):
-        super(HTTPError, self).__init__(message)
-        self.code = code
+    def __init__(self, exc):
+        super(HTTPError, self).__init__(*exc.args)
+        self.request = exc.request
+        self.response = exc.response
 
 
 class APIError(Error):
@@ -1640,8 +1643,10 @@ class API(object):
             self.token_bucket.consume(1)
         log().debug("%s", url)
         response = method(url, **kwargs)
-        if response.status_code != requests.codes.ok:
-            raise HTTPError(response.text, response.status_code)
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            raise HTTPError(e)
         return response
 
     def _call(self, method, path, qdict, **kwargs):
@@ -1761,8 +1766,10 @@ class API(object):
             log_text = "%.97s..." % response.text
         log().debug("%s -> %s", data, log_text)
 
-        if response.status_code != requests.codes.ok:
-            raise HTTPError(response.text, response.status_code)
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            raise HTTPError(e)
 
         response = response.json()
         if "error" in response:
