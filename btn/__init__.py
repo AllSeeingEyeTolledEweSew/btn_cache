@@ -1607,6 +1607,15 @@ class API(object):
         else:
             self.db.cursor().execute("commit")
 
+    @property
+    def session(self):
+        session = getattr(self._local, "session", None)
+        if session is not None:
+            return session
+        session = requests.Session()
+        self._local.session = session
+        return session
+
     def _mk_url(self, host, path, **qdict):
         query = urlparse.urlencode(qdict)
         return urlparse.urlunparse((
@@ -1628,8 +1637,8 @@ class API(object):
         This will consume a token from `token_bucket`, blocking if necessary.
 
         Args:
-            method: A `requests.method` to use when calling (i.e., either
-                `requests.get` or `requests.post`).
+            method: A string method name to use when calling (i.e., 'get' or
+                'post')
             url: The URL to call.
             **kwargs: The kwargs to pass to the `requests` method.
 
@@ -1642,7 +1651,7 @@ class API(object):
         if self.token_bucket:
             self.token_bucket.consume(1)
         log().debug("%s", url)
-        response = method(url, **kwargs)
+        response = getattr(self.session, method)(url, **kwargs)
         try:
             response.raise_for_status()
         except requests.HTTPError as e:
@@ -1655,8 +1664,8 @@ class API(object):
         This will consume a token from `token_bucket`, blocking if necessary.
 
         Args:
-            method: A `requests.method` to us ewhen calling (i.e., either
-                `requests.get` or `requests.post`).
+            method: A string method name to use when calling (i.e., 'get' or
+                'post')
             path: The HTTP path to the URL to call.
             qdict: A dictionary of query parameters.
             **kwargs: The kwargs to pass to the `requests` method.
@@ -1685,7 +1694,7 @@ class API(object):
         Raises:
             HTTPError: If there was an HTTP-level error.
         """
-        return self._call(requests.get, path, qdict)
+        return self._call("get", path, qdict)
 
     def _get_url(self, url, **kwargs):
         """A helper function to make a normal HTTP GET call to the BTN site.
@@ -1702,7 +1711,7 @@ class API(object):
         Raises:
             HTTPError: If there was an HTTP-level error.
         """
-        return self._call_url(requests.get, url, **kwargs)
+        return self._call_url("get", url, **kwargs)
 
     def call_api(self, method, *params, leave_tokens=None,
                  block_on_token=None, consume_token=None):
@@ -1756,7 +1765,7 @@ class API(object):
                     raise WouldBlock()
 
         call_time = time.time()
-        response = requests.post(
+        response = self.session.post(
             self.endpoint, headers={"Content-Type": "application/json"},
             data=data)
 
