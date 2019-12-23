@@ -120,12 +120,6 @@ class Series(object):
                 "youtube_trailer text, "
                 "updated_at integer not null, "
                 "deleted tinyint not null default 0)")
-            c.execute(
-                "create index if not exists series_on_updated_at "
-                "on series (updated_at)")
-            c.execute(
-                "create index if not exists series_on_tvdb_id "
-                "on series (tvdb_id)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -172,6 +166,9 @@ class Series(object):
         if not ids:
             return
         with api.db:
+            api.db.cursor().execute(
+                "create index if not exists torrent_entry_group_on_series_id "
+                "on torrent_entry_group (series_id)")
             rows = api.db.cursor().execute(
                 "select id from series "
                 "where id in (%s) and not deleted and not exists ("
@@ -300,12 +297,6 @@ class Group(object):
                 "series_id integer not null,"
                 "updated_at integer not null, "
                 "deleted tinyint not null default 0)")
-            c.execute(
-                "create index if not exists torrent_entry_group_on_updated_at "
-                "on torrent_entry_group (updated_at)")
-            c.execute(
-                "create index if not exists torrent_entry_group_on_series_id "
-                "on torrent_entry_group (series_id)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -358,6 +349,9 @@ class Group(object):
         if not ids:
             return
         with api.db:
+            api.db.cursor().execute(
+                "create index if not exists torrent_entry_on_group_id "
+                "on torrent_entry (group_id)")
             if len(ids) > 900:
                 api.db.cursor().execute(
                     "create temporary table delete_group_ids "
@@ -627,18 +621,6 @@ class TorrentEntry(object):
                 "raw_torrent_cached tinyint not null default 0, "
                 "updated_at integer not null, "
                 "deleted tinyint not null default 0)")
-            c.execute(
-                "create index if not exists torrent_entry_updated_at "
-                "on torrent_entry (updated_at)")
-            c.execute(
-                "create index if not exists torrent_entry_on_group_id "
-                "on torrent_entry (group_id)")
-            c.execute(
-                "create index if not exists torrent_entry_on_info_hash "
-                "on torrent_entry (info_hash)")
-            c.execute(
-                "create index if not exists torrent_entry_on_time "
-                "on torrent_entry (time)")
 
             c.execute(
                 "create table if not exists file_info ("
@@ -650,12 +632,6 @@ class TorrentEntry(object):
             c.execute(
                 "create unique index if not exists file_info_id_index "
                 "on file_info (id, file_index)")
-            c.execute(
-                "create index if not exists file_info_id_index_path "
-                "on file_info (id, file_index, path)")
-            c.execute(
-                "create index if not exists file_info_updated_at "
-                "on file_info (updated_at)")
 
     @classmethod
     def _from_db(cls, api, id):

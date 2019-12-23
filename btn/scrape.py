@@ -69,6 +69,10 @@ def apply_contiguous_results_locked(api, offset, sr, changestamp=None):
     is_end = offset + len(entries) >= sr.results
 
     if entries:
+        api.db.cursor().execute(
+            "create index if not exists torrent_entry_on_time on "
+            "torrent_entry (time)")
+
         newest = entries[0]
         oldest = entries[-1]
         api.db.cursor().execute(
@@ -332,6 +336,10 @@ class MetadataTipScraper(object):
         return done
 
     def scrape_step(self):
+        self.api.db.cursor().execute(
+            "create index if not exists torrent_entry_on_time on "
+            "torrent_entry (time)")
+
         with self.api.db:
             offset = get_int(self.api, self.KEY_OFFSET)
             last_scraped = get_int(self.api, self.KEY_LAST)
@@ -443,6 +451,10 @@ class TorrentFileScraper(object):
             self.ts = -1
             self.queue = Queue.PriorityQueue()
             self.last_reset_time = now
+
+        self.api.db.cursor().execute(
+            "create index if not exists torrent_entry_on_updated_at on "
+            "torrent_entry (updated_at)")
 
         with self.api.db:
             for id, in self.get_unfilled_ids():
