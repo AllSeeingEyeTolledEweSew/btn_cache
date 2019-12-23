@@ -1382,6 +1382,12 @@ class WouldBlock(Error):
     pass
 
 
+class DataParseError(Error):
+    """The client encountered unexpected data from the API."""
+
+    pass
+
+
 def add_arguments(parser, create_group=True):
     """A helper function to add standard command-line options to make an API
     instance.
@@ -1920,24 +1926,30 @@ class API(object):
 
         Returns:
             A TorrentEntry object.
+
+        Raises:
+            DataParseError: If the API returns unexpected data.
         """
-        series = Series(
-            self, id=int(tj["SeriesID"]), name=tj["Series"],
-            banner=tj["SeriesBanner"], poster=tj["SeriesPoster"],
-            imdb_id=tj["ImdbID"],
-            tvdb_id=int(tj["TvdbID"]) if tj.get("TvdbID") else None,
-            tvrage_id=int(tj["TvrageID"]) if tj.get("TvrageID") else None,
-            youtube_trailer=tj["YoutubeTrailer"] or None)
-        group = Group(
-            self, id=int(tj["GroupID"]), category=tj["Category"],
-            name=tj["GroupName"], series=series)
-        return TorrentEntry(self, id=int(tj["TorrentID"]), group=group,
-            codec=tj["Codec"], container=tj["Container"],
-            info_hash=tj["InfoHash"], leechers=int(tj["Leechers"]),
-            origin=tj["Origin"], release_name=tj["ReleaseName"],
-            resolution=tj["Resolution"], seeders=int(tj["Seeders"]),
-            size=int(tj["Size"]), snatched=int(tj["Snatched"]),
-            source=tj["Source"], time=int(tj["Time"]))
+        try:
+            series = Series(
+                self, id=int(tj["SeriesID"]), name=tj["Series"],
+                banner=tj["SeriesBanner"], poster=tj["SeriesPoster"],
+                imdb_id=tj["ImdbID"],
+                tvdb_id=int(tj["TvdbID"]) if tj.get("TvdbID") else None,
+                tvrage_id=int(tj["TvrageID"]) if tj.get("TvrageID") else None,
+                youtube_trailer=tj["YoutubeTrailer"] or None)
+            group = Group(
+                self, id=int(tj["GroupID"]), category=tj["Category"],
+                name=tj["GroupName"], series=series)
+            return TorrentEntry(self, id=int(tj["TorrentID"]), group=group,
+                codec=tj["Codec"], container=tj["Container"],
+                info_hash=tj["InfoHash"], leechers=int(tj["Leechers"]),
+                origin=tj["Origin"], release_name=tj["ReleaseName"],
+                resolution=tj["Resolution"], seeders=int(tj["Seeders"]),
+                size=int(tj["Size"]), snatched=int(tj["Snatched"]),
+                source=tj["Source"], time=int(tj["Time"]))
+        except (ValueError, KeyError) as e:
+            raise DataParseError(e)
 
     def getTorrentsCached(self, results=None, offset=None, **kwargs):
         """Issues a synthetic "getTorrents" call against the local cache.
@@ -2061,6 +2073,7 @@ class API(object):
                 available.
             APIError: When we receive an error from the API.
             HTTPError: If there was an HTTP-level error.
+            DataParseError: If the API returns unexpected data.
         """
         sr_json = self.getTorrentsJson(
             results=results, offset=offset, leave_tokens=leave_tokens,
@@ -2150,6 +2163,7 @@ class API(object):
                 available.
             APIError: When we receive an error from the API.
             HTTPError: If there was an HTTP-level error.
+            DataParseError: If the API returns unexpected data.
         """
         tj = self.getTorrentByIdJson(
             id, leave_tokens=leave_tokens, block_on_token=block_on_token,
@@ -2200,13 +2214,19 @@ class API(object):
 
         Returns:
             A Snatch object.
+
+        Raises:
+            DataParseError: If the API returns unexpected data.
         """
-        return Snatch(
-            self, id=int(j["TorrentID"]), downloaded=int(j["Downloaded"]),
-            uploaded=int(j["Uploaded"]), seed_time=int(j["Seedtime"]),
-            seeding=bool(int(j["IsSeeding"])),
-            snatch_time=calendar.timegm(time.strptime(
-                j["SnatchTime"], "%Y-%m-%d %H:%M:%S")))
+        try:
+            return Snatch(
+                self, id=int(j["TorrentID"]), downloaded=int(j["Downloaded"]),
+                uploaded=int(j["Uploaded"]), seed_time=int(j["Seedtime"]),
+                seeding=bool(int(j["IsSeeding"])),
+                snatch_time=calendar.timegm(time.strptime(
+                    j["SnatchTime"], "%Y-%m-%d %H:%M:%S")))
+        except (ValueError, KeyError) as e:
+            raise DataParseError(e)
 
     def getUserSnatchlist(self, results=10, offset=0, leave_tokens=None,
                           block_on_token=None, consume_token=None):
@@ -2234,6 +2254,7 @@ class API(object):
                 available.
             APIError: When we receive an error from the API.
             HTTPError: If there was an HTTP-level error.
+            DataParseError: If the API returns unexpected data.
         """
         sr_json = self.getUserSnatchlistJson(
             results=results, offset=offset, leave_tokens=leave_tokens,
@@ -2266,17 +2287,24 @@ class API(object):
 
         Returns:
             A `UserInfo` object.
+
+        Raises:
+            DataParseError: If the API returns unexpected data.
         """
-        return UserInfo(
-            self, id=int(j["UserID"]), bonus=int(j["Bonus"]),
-            class_name=j["Class"], class_level=int(j["ClassLevel"]),
-            download=int(j["Download"]), email=j["Email"],
-            enabled=bool(int(j["Enabled"])), hnr=int(j["HnR"]),
-            invites=int(j["Invites"]), join_date=int(j["JoinDate"]),
-            lumens=int(j["Lumens"]), paranoia=int(j["Paranoia"]),
-            snatches=int(j["Snatches"]), title=j["Title"],
-            upload=int(j["Upload"]),
-            uploads_snatched=int(j["UploadsSnatched"]), username=j["Username"])
+        try:
+            return UserInfo(
+                self, id=int(j["UserID"]), bonus=int(j["Bonus"]),
+                class_name=j["Class"], class_level=int(j["ClassLevel"]),
+                download=int(j["Download"]), email=j["Email"],
+                enabled=bool(int(j["Enabled"])), hnr=int(j["HnR"]),
+                invites=int(j["Invites"]), join_date=int(j["JoinDate"]),
+                lumens=int(j["Lumens"]), paranoia=int(j["Paranoia"]),
+                snatches=int(j["Snatches"]), title=j["Title"],
+                upload=int(j["Upload"]),
+                uploads_snatched=int(j["UploadsSnatched"]),
+                username=j["Username"])
+        except (ValueError, KeyError) as e:
+            raise DataParseError(e)
 
     def userInfoJson(self, leave_tokens=None, block_on_token=None,
                      consume_token=None):
@@ -2339,6 +2367,7 @@ class API(object):
                 available.
             APIError: When we receive an error from the API.
             HTTPError: If there was an HTTP-level error.
+            DataParseError: If the API returns unexpected data.
         """
         uj = self.userInfoJson(
             leave_tokens=leave_tokens, block_on_token=block_on_token,
