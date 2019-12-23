@@ -3,7 +3,11 @@
 
 import argparse
 import logging
+import os
+import signal
 import sys
+import threading
+import time
 
 import btn
 from btn import scrape as btn_scrape
@@ -31,6 +35,7 @@ def main():
     parser.add_argument(
         "--snatchlist_num_threads", "-s", type=int,
         default=btn_scrape.SnatchlistScraper.DEFAULT_NUM_THREADS)
+    parser.add_argument("--parent", type=int)
     btn.add_arguments(parser, create_group=True)
 
     args = parser.parse_args()
@@ -73,6 +78,19 @@ def main():
 
     if not scrapers:
         log().fatal("Nothing to do.")
+
+    if args.parent:
+
+        def check_parent(parent):
+            while True:
+                if os.getppid() != parent:
+                    log().fatal("Parent appears to have died, exiting.")
+                    os.kill(os.getpid(), signal.SIGTERM)
+                time.sleep(60)
+
+        t = threading.Thread(
+            name="parent-checker", target=check_parent, args=(args.parent,))
+        t.start()
 
     for scraper in scrapers:
         scraper.start()
