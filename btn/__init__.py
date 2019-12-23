@@ -295,7 +295,7 @@ class Group(object):
             c.execute(
                 "create table if not exists torrent_entry_group ("
                 "id integer primary key,"
-                "category_id integer not null,"
+                "category text not null,"
                 "name text not null,"
                 "series_id integer not null,"
                 "updated_at integer not null, "
@@ -306,13 +306,6 @@ class Group(object):
             c.execute(
                 "create index if not exists torrent_entry_group_on_series_id "
                 "on torrent_entry_group (series_id)")
-            c.execute(
-                "create table if not exists category ("
-                "id integer primary key, "
-                "name text not null)")
-            c.execute(
-                "create unique index if not exists category_name "
-                "on category (name)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -337,19 +330,13 @@ class Group(object):
         with api.db:
             c = api.db.cursor()
             row = c.execute(
-                "select "
-                "torrent_entry_group.id as id, "
-                "category.name as category, "
-                "torrent_entry_group.name as name, "
-                "series_id "
-                "from torrent_entry_group "
-                "left outer join category "
-                "on torrent_entry_group.category_id = category.id "
-                "where torrent_entry_group.id = ?",
+                "select * from torrent_entry_group where id = ?",
                 (id,)).fetchone()
             if not row:
                 return None
             row = dict(zip((n for n, t in c.getdescription()), row))
+            for k in ("updated_at", "deleted"):
+                del row[k]
             series = Series._from_db(api, row.pop("series_id"))
             return cls(api, series=series, **row)
 
@@ -441,19 +428,13 @@ class Group(object):
         with self.api.db:
             if changestamp is None:
                 changestamp = self.api.get_changestamp()
-            self.api.db.cursor().execute(
-                "insert or ignore into category (name) values (?)",
-                (self.category,))
-            category_id = self.api.db.cursor().execute(
-                "select id from category where name = ?",
-                (self.category,)).fetchone()[0]
             r = self.api.db.cursor().execute(
                 "select series_id from torrent_entry_group where id = ?",
                 (self.id,)).fetchone()
             old_series_id = r[0] if r is not None else None
             self.series.serialize(changestamp=changestamp)
             params = {
-                "category_id": category_id,
+                "category": self.category,
                 "name": self.name,
                 "series_id": self.series.id,
                 "deleted": 0,
@@ -630,16 +611,19 @@ class TorrentEntry(object):
             c.execute(
                 "create table if not exists torrent_entry ("
                 "id integer primary key, "
-                "codec_id integer not null, "
-                "container_id integer not null, "
+                "codec text not null, "
+                "container text not null, "
                 "group_id integer not null, "
                 "info_hash text, "
-                "origin_id integer not null, "
+                "origin text not null, "
                 "release_name text not null, "
-                "resolution_id integer not null, "
+                "resolution text not null, "
                 "size integer not null, "
-                "source_id integer not null, "
+                "source text not null, "
                 "time integer not null, "
+                "snatched integer not null, "
+                "seeders integer not null, "
+                "leechers integer not null, "
                 "raw_torrent_cached tinyint not null default 0, "
                 "updated_at integer not null, "
                 "deleted tinyint not null default 0)")
@@ -655,41 +639,6 @@ class TorrentEntry(object):
             c.execute(
                 "create index if not exists torrent_entry_on_time "
                 "on torrent_entry (time)")
-            c.execute(
-                "create table if not exists codec ("
-                "id integer primary key, "
-                "name text not null)")
-            c.execute(
-                "create unique index if not exists codec_name "
-                "on codec (name)")
-            c.execute(
-                "create table if not exists container ("
-                "id integer primary key, "
-                "name text not null)")
-            c.execute(
-                "create unique index if not exists container_name "
-                "on container (name)")
-            c.execute(
-                "create table if not exists origin ("
-                "id integer primary key, "
-                "name text not null)")
-            c.execute(
-                "create unique index if not exists origin_name "
-                "on origin (name)")
-            c.execute(
-                "create table if not exists resolution ("
-                "id integer primary key, "
-                "name text not null)")
-            c.execute(
-                "create unique index if not exists resolution_name "
-                "on resolution (name)")
-            c.execute(
-                "create table if not exists source ("
-                "id integer primary key, "
-                "name text not null)")
-            c.execute(
-                "create unique index if not exists source_name "
-                "on source (name)")
 
             c.execute(
                 "create table if not exists file_info ("
@@ -707,12 +656,6 @@ class TorrentEntry(object):
             c.execute(
                 "create index if not exists file_info_updated_at "
                 "on file_info (updated_at)")
-            c.execute(
-                "create table if not exists tracker_stats ("
-                "id integer primary key,"
-                "snatched integer not null, "
-                "seeders integer not null, "
-                "leechers integer not null)")
 
     @classmethod
     def _from_db(cls, api, id):
@@ -738,34 +681,12 @@ class TorrentEntry(object):
         with api.db:
             c = api.db.cursor()
             row = c.execute(
-                "select "
-                "torrent_entry.id as id, "
-                "codec.name as codec, "
-                "container.name as container, "
-                "torrent_entry.group_id as group_id, "
-                "info_hash, "
-                "tracker_stats.leechers as leechers, "
-                "origin.name as origin, "
-                "release_name, "
-                "resolution.name as resolution, "
-                "tracker_stats.seeders as seeders, "
-                "size, "
-                "tracker_stats.snatched as snatched, "
-                "source.name as source, "
-                "time "
-                "from torrent_entry "
-                "left outer join codec on codec.id = codec_id "
-                "left outer join container on container.id = container_id "
-                "left outer join origin on origin.id = origin_id "
-                "left outer join resolution on resolution.id = resolution_id "
-                "left outer join source on source.id = source_id "
-                "left outer join tracker_stats "
-                "on tracker_stats.id = torrent_entry.id "
-                "where torrent_entry.id = ?",
-                (id,)).fetchone()
+                "select * from torrent_entry where id = ?", (id,)).fetchone()
             if not row:
                 return None
             row = dict(zip((n for n, t in c.getdescription()), row))
+            for k in ("updated_at", "deleted", "raw_torrent_cached"):
+                del row[k]
             group = Group._from_db(api, row.pop("group_id"))
             return cls(api, group=group, **row)
 
@@ -798,12 +719,9 @@ class TorrentEntry(object):
         """Serialize the TorrentEntry's data to its API's database.
 
         This will write all the fields of this TorrentEntry to the
-        "torrent_entry" table of the database of the `api`. If any fields have
-        changed, the `updated_at` column of the "torrent_entry" table will be
-        updated. If no data changes, the corresponding row in "torrent_entry"
-        won't change at all.
-
-        The "tracker_stats" table is always updated.
+        "torrent_entry" table of the database of the `api`. If any fields
+        except `snatched`, `seeders` and `leechers` have changed, the
+        `updated_at` column of the "torrent_entry" table will be updated.
 
         The "enum value" tables "codec", "container", "origin", "resolution"
         and "source" will also be updated with new values if necessary.
@@ -824,39 +742,6 @@ class TorrentEntry(object):
         if self.raw_torrent_cached and not any(self.file_info_cached):
             file_info = list(FileInfo._from_tobj(self.torrent_object))
         with self.api.db:
-            self.api.db.cursor().execute(
-                "insert or ignore into codec (name) values (?)", (self.codec,))
-            codec_id = self.api.db.cursor().execute(
-                "select id from codec where name = ?",
-                (self.codec,)).fetchone()[0]
-
-            self.api.db.cursor().execute(
-                "insert or ignore into container (name) values (?)",
-                (self.container,))
-            container_id = self.api.db.cursor().execute(
-                "select id from container where name = ?",
-                (self.container,)).fetchone()[0]
-
-            self.api.db.cursor().execute(
-                "insert or ignore into origin (name) values (?)",
-                (self.origin,))
-            origin_id = self.api.db.cursor().execute(
-                "select id from origin where name = ?",
-                (self.origin,)).fetchone()[0]
-
-            self.api.db.cursor().execute(
-                "insert or ignore into resolution (name) values (?)",
-                (self.resolution,))
-            resolution_id = self.api.db.cursor().execute(
-                "select id from resolution where name = ?",
-                (self.resolution,)).fetchone()[0]
-
-            self.api.db.cursor().execute(
-                "insert or ignore into source (name) values (?)",
-                (self.source,))
-            source_id = self.api.db.cursor().execute(
-                "select id from source where name = ?",
-                (self.source,)).fetchone()[0]
             r = self.api.db.cursor().execute(
                 "select group_id from torrent_entry where id = ?",
                 (self.id,)).fetchone()
@@ -865,44 +750,49 @@ class TorrentEntry(object):
             if changestamp is None:
                 changestamp = self.api.get_changestamp()
             self.group.serialize(changestamp=changestamp)
-            params = {
-                "codec_id": codec_id,
-                "container_id": container_id,
+            important_params = {
+                "codec": self.codec,
+                "container": self.container,
                 "group_id": self.group.id,
                 "info_hash": self.info_hash,
-                "origin_id": origin_id,
+                "origin": self.origin,
                 "release_name": self.release_name,
-                "resolution_id": resolution_id,
+                "resolution": self.resolution,
                 "size": self.size,
-                "source_id": source_id,
+                "source": self.source,
                 "time": self.time,
                 "raw_torrent_cached": self.raw_torrent_cached,
                 "deleted": 0,
             }
-            insert_params = {"id": self.id, "updated_at": changestamp}
-            insert_params.update(params)
-            names = sorted(insert_params.keys())
+            all_params = {
+                "id": self.id,
+                "updated_at": changestamp,
+                "snatched": self.snatched,
+                "seeders": self.seeders,
+                "leechers": self.leechers,
+            }
+            all_params.update(important_params)
+            names = sorted(all_params.keys())
             self.api.db.cursor().execute(
                 "insert or ignore into torrent_entry (%(n)s) values (%(v)s)" %
                 {"n": ",".join(names), "v": ",".join(":" + n for n in names)},
-                insert_params)
-            where_names = sorted(params.keys())
-            set_names = sorted(params.keys())
-            set_names.append("updated_at")
-            update_params = dict(params)
-            update_params["updated_at"] = changestamp
-            update_params["id"] = self.id
-            self.api.db.cursor().execute(
-                "update torrent_entry set %(u)s "
-                "where id = :id and (%(w)s)" %
-                {"u": ",".join("%(n)s = :%(n)s" % {"n": n} for n in set_names),
-                 "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
-                     for n in where_names)},
-                update_params)
-            self.api.db.cursor().execute(
-                "insert or replace into tracker_stats "
-                "(id, snatched, seeders, leechers) values (?, ?, ?, ?)",
-                (self.id, self.snatched, self.seeders, self.leechers))
+                all_params)
+            if not self.api.db.changes():
+                where_names = sorted(important_params.keys())
+                set_names = sorted(set(all_params.keys()) - {"id"})
+                self.api.db.cursor().execute(
+                    "update torrent_entry set %(u)s "
+                    "where id = :id and (%(w)s)" %
+                    {"u": ",".join("%(n)s = :%(n)s" % {"n": n}
+                         for n in set_names),
+                     "w": " or ".join("%(n)s is not :%(n)s" % {"n": n}
+                         for n in where_names)},
+                    all_params)
+            if not self.api.db.changes():
+                self.api.db.cursor().execute(
+                    "update torrent_entry set snatched = ?, seeders = ?, "
+                    "leechers = ? where id = ?",
+                    (self.snatched, self.seeders, self.leechers, self.id))
             if old_group_id != self.group.id:
                 Group._maybe_delete(
                     self.api, old_group_id, changestamp=changestamp)
@@ -1971,19 +1861,19 @@ class API(object):
         if "series" in kwargs:
             params.append(("series.name = ?", kwargs["series"]))
         if "category" in kwargs:
-            params.append(("category.name = ?", kwargs["category"]))
+            params.append(("torrent_entry_group.category = ?", kwargs["category"]))
         if "name" in kwargs:
             params.append(("torrent_entry_group.name = ?", kwargs["name"]))
         if "codec" in kwargs:
-            params.append(("codec.name = ?", kwargs["codec"]))
+            params.append(("torrent_entry.codec = ?", kwargs["codec"]))
         if "container" in kwargs:
-            params.append(("container.name = ?", kwargs["container"]))
+            params.append(("torrent_entry.container = ?", kwargs["container"]))
         if "source" in kwargs:
-            params.append(("source.name = ?", kwargs["source"]))
+            params.append(("torrent_entry.source = ?", kwargs["source"]))
         if "resolution" in kwargs:
-            params.append(("resolution.name = ?", kwargs["resolution"]))
+            params.append(("torrent_entry.resolution = ?", kwargs["resolution"]))
         if "origin" in kwargs:
-            params.append(("origin.name = ?", kwargs["origin"]))
+            params.append(("torrent_entry.origin = ?", kwargs["origin"]))
         if "hash" in kwargs:
             params.append(("torrent_entry.info_hash = ?", kwargs["hash"]))
         if "tvdb" in kwargs:
@@ -2010,18 +1900,6 @@ class API(object):
             "torrent_entry.group_id = torrent_entry_group.id "
             "inner join series on "
             "torrent_entry_group.series_id = series.id "
-            "inner join category on "
-            "torrent_entry_group.category_id = category.id "
-            "inner join codec on "
-            "torrent_entry.codec_id = codec.id "
-            "inner join container on "
-            "torrent_entry.container_id = container.id "
-            "inner join source on "
-            "torrent_entry.source_id = source.id "
-            "inner join resolution on "
-            "torrent_entry.resolution_id = resolution.id "
-            "inner join origin on "
-            "torrent_entry.origin_id = origin.id "
             "%s "
             "order by torrent_entry.id desc %s %s")
 
