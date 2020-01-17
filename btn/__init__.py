@@ -468,7 +468,10 @@ class FileInfo(object):
 
     Attributes:
         index: The integer index of this file within the torrent metafile.
-        length: The integer length of the file in bytes.
+        start: The integer offset within the torrent data of the first byte of
+            this file.
+        stop: The integer offset within the torrent data of the last byte of
+            this file, plus one.
         path: The recommended pathname as a string, as it appears in the
             torrent metafile.
     """
@@ -501,11 +504,13 @@ class FileInfo(object):
                 "select "
                 "file_index as 'index', "
                 "path, "
-                "length "
+                "start, "
+                "stop "
                 "from file_info "
                 "where id = ?",
                 (id,))
-            return tuple(cls(index=r[0], path=r[1], length=r[2]) for r in rows)
+            return tuple(cls(index=r[0], path=r[1], start=r[2], stop=r[3])
+                         for r in rows)
 
     @classmethod
     def _from_tobj(cls, tobj):
@@ -522,19 +527,24 @@ class FileInfo(object):
         ti = tobj[b"info"]
         values = []
         if b"files" in ti:
+            offset = 0
             for idx, fi in enumerate(ti[b"files"]):
                 length = fi[b"length"]
                 path_parts = [ti[b"name"]]
                 path_parts.extend(list(fi[b"path"]))
                 path = b"/".join(path_parts)
-                yield cls(index=idx, path=path, length=length)
+                start = offset
+                stop = offset + length
+                offset = stop
+                yield cls(index=idx, path=path, start=start, stop=stop)
         else:
-            yield cls(index=0, path=ti[b"name"], length=ti[b"length"])
+            yield cls(index=0, path=ti[b"name"], start=0, stop=ti[b"length"])
 
-    def __init__(self, index=None, path=None, length=None):
+    def __init__(self, index=None, path=None, start=None, stop=None):
         self.index = index
         self.path = path
-        self.length = length
+        self.start = start
+        self.stop = stop
 
     def __repr__(self):
         return "<FileInfo %s \"%s\">" % (self.index, self.path)
@@ -627,7 +637,8 @@ class TorrentEntry(object):
                 "id integer not null, "
                 "file_index integer not null, "
                 "path text not null, "
-                "length integer not null, "
+                "start integer not null, "
+                "stop integer not null, "
                 "updated_at integer not null)")
             c.execute(
                 "create unique index if not exists file_info_id_index "
@@ -775,12 +786,13 @@ class TorrentEntry(object):
 
             if file_info:
                 values = [
-                    (self.id, fi.index, fi.path, fi.length, changestamp)
+                    (self.id, fi.index, fi.path, fi.start, fi.stop,
+                        changestamp)
                     for fi in file_info]
                 self.api.db.cursor().executemany(
                     "insert or ignore into file_info "
-                    "(id, file_index, path, length, updated_at) values "
-                    "(?, ?, ?, ?, ?)", values)
+                    "(id, file_index, path, start, stop, updated_at) values "
+                    "(?, ?, ?, ?, ?, ?)", values)
 
     @property
     def link(self):
