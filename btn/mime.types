@@ -1,0 +1,23 @@
+video/x-matroska mkv
+video/mp4 mp4
+video/x-msvideo avi divx
+video/mp2t ts m2ts
+text/x-nfo nfo
+text/x-ass ass
+text/x-ssa ssa
+text/x-srt srt
+application/x-iso9660-image iso
+video/mpeg mpg
+video/x-m4v m4v
+video/x-ms-wmv wmv
+text/x-sfv sfv
+audio/ac3 ac3
+video/x-flv flv
+video/mpeg mpeg
+video/ogg ogm
+audio/ogg ogg
+video/x-matroska-3d mk3d
+audio/x-matroska mka
+video/quicktime mov
+# TODO anything for idx and sub?
+application/vnd.rn-realmedia rmvb rm

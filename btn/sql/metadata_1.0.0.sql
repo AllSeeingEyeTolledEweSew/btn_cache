@@ -1,0 +1,40 @@
+CREATE TABLE "{schema}".series (id INTEGER PRIMARY KEY, imdb_id TEXT, name TEXT, banner TEXT, poster TEXT, tvdb_id INTEGER, tvrage_id INTEGER, youtube_trailer TEXT, updated_at INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL);
+
+CREATE INDEX "{schema}".series_on_updated_at ON series (updated_at);
+
+CREATE TRIGGER "{schema}".series_delete_abort BEFORE DELETE ON series BEGIN SELECT RAISE(ABORT, 'delete on series is disabled'); END;
+CREATE TRIGGER "{schema}".series_change_rowid_abort BEFORE UPDATE OF id ON series WHEN new.id != old.id BEGIN SELECT RAISE(ABORT, 'changing series.id is disabled'); END;
+CREATE TRIGGER "{schema}".series_insert_set_updated_at AFTER INSERT ON series BEGIN UPDATE series SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+CREATE TRIGGER "{schema}".series_update_set_updated_at AFTER UPDATE OF imdb_id, name, banner, poster, tvdb_id, tvrage_id, youtube_trailer, deleted ON series WHEN old.imdb_id IS NOT new.imdb_id OR old.name IS NOT new.name OR old.banner IS NOT new.banner OR old.poster IS NOT new.poster OR old.tvdb_id IS NOT new.tvdb_id OR old.tvrage_id IS NOT new.tvrage_id OR old.youtube_trailer IS NOT new.youtube_trailer BEGIN UPDATE series SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+
+CREATE TABLE "{schema}".torrent_entry_group (id INTEGER PRIMARY KEY, category TEXT NOT NULL, name TEXT, series_id INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL);
+
+CREATE INDEX "{schema}".torrent_entry_group_on_updated_at ON torrent_entry_group (updated_at);
+CREATE INDEX "{schema}".torrent_entry_group_on_series_id ON torrent_entry_group (series_id);
+
+CREATE TRIGGER "{schema}".torrent_entry_group_delete_abort BEFORE DELETE ON torrent_entry_group BEGIN SELECT RAISE(ABORT, 'delete on torrent_entry_group is disabled'); END;
+CREATE TRIGGER "{schema}".torrent_entry_group_change_rowid_abort BEFORE UPDATE OF id ON torrent_entry_group WHEN new.id != old.id BEGIN SELECT RAISE(ABORT, 'changing torrent_entry_group.id is disabled'); END;
+CREATE TRIGGER "{schema}".torrent_entry_group_insert_set_updated_at AFTER INSERT ON torrent_entry_group BEGIN UPDATE torrent_entry_group SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+CREATE TRIGGER "{schema}".torrent_entry_group_update_set_updated_at AFTER UPDATE OF category, name, series_id, deleted ON torrent_entry_group WHEN old.category IS NOT new.category OR old.name IS NOT new.name OR old.series_id IS NOT new.series_id OR old.deleted IS NOT new.deleted BEGIN UPDATE torrent_entry_group SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+CREATE TRIGGER "{schema}".torrent_entry_group_update_check_series_deleted AFTER UPDATE OF series_id, deleted ON torrent_entry_group WHEN (new.series_id != old.series_id OR new.deleted != old.deleted) AND NOT EXISTS (SELECT t.series_id FROM torrent_entry_group t WHERE t.series_id = old.series_id AND NOT t.deleted) BEGIN UPDATE series SET deleted = 1 WHERE id = old.series_id; END;
+
+CREATE TABLE "{schema}".torrent_entry (id INTEGER PRIMARY KEY, codec TEXT, container TEXT, group_id INTEGER NOT NULL, info_hash TEXT NOT NULL COLLATE NOCASE, origin TEXT, release_name TEXT, resolution TEXT, size INTEGER NOT NULL, source TEXT, time INTEGER NOT NULL, snatched INTEGER NOT NULL, seeders INTEGER NOT NULL, leechers INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL);
+
+CREATE INDEX "{schema}".torrent_entry_on_updated_at ON torrent_entry (updated_at);
+CREATE INDEX "{schema}".torrent_entry_on_group_id ON torrent_entry (group_id);
+CREATE INDEX "{schema}".torrent_entry_on_time ON torrent_entry (time);
+
+CREATE TRIGGER "{schema}".torrent_entry_delete_abort BEFORE DELETE ON torrent_entry BEGIN SELECT RAISE(ABORT, 'delete on torrent_entry is disabled'); END;
+CREATE TRIGGER "{schema}".torrent_entry_change_rowid_abort BEFORE UPDATE OF id ON torrent_entry WHEN new.id != old.id BEGIN SELECT RAISE(ABORT, 'changing torrent_entry.id is disabled'); END;
+CREATE TRIGGER "{schema}".torrent_entry_insert_set_updated_at AFTER INSERT ON torrent_entry BEGIN UPDATE torrent_entry SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+CREATE TRIGGER "{schema}".torrent_entry_update_set_updated_at AFTER UPDATE OF codec, container, group_id, info_hash, origin, release_name, resolution, size, source, time, deleted ON torrent_entry WHEN old.codec IS NOT new.codec OR old.container IS NOT new.container OR old.group_id IS NOT new.group_id OR old.info_hash IS NOT new.info_hash OR old.origin IS NOT new.origin OR old.release_name IS NOT new.release_name OR old.resolution IS NOT new.resolution OR old.size IS NOT new.size OR old.source IS NOT new.source OR old.time IS NOT new.time OR old.deleted IS NOT new.deleted BEGIN UPDATE torrent_entry SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+CREATE TRIGGER "{schema}".torrent_entry_update_check_group_deleted AFTER UPDATE OF series_id, deleted ON torrent_entry WHEN (new.group_id != old.group_id OR new.deleted != old.deleted) AND NOT EXISTS (SELECT t.group_id FROM torrent_entry t WHERE t.group_id = old.group_id AND NOT t.deleted) BEGIN UPDATE torrent_entry_group SET deleted = 1 WHERE id = old.group_id; END;
+
+CREATE TABLE "{schema}".file_info (id INTEGER NOT NULL, file_index INTEGER NOT NULL, path BLOB NOT NULL, encoding TEXT COLLATE NOCASE, start INTEGER NOT NULL, stop INTEGER NOT NULL);
+
+CREATE UNIQUE INDEX "{schema}".file_info_on_id_and_file_index ON file_info (id, file_index);
+
+CREATE TRIGGER "{schema}".file_info_change_unique_abort BEFORE UPDATE OF id ON file_info WHEN new.id != old.id BEGIN SELECT RAISE(ABORT, 'changing file_info.id is disabled'); END;
+CREATE TRIGGER "{schema}".file_info_insert_set_updated_at AFTER INSERT ON file_info BEGIN UPDATE torrent_entry SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+CREATE TRIGGER "{schema}".file_info_update_set_updated_at AFTER UPDATE OF file_index, path, encoding, start, stop ON file_info WHEN old.file_index IS NOT new.file_index OR old.path IS NOT new.path OR old.encoding IS NOT new.encoding OR old.start IS NOT new.start OR old.stop IS NOT new.stop BEGIN UPDATE torrent_entry SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = new.id; END;
+CREATE TRIGGER "{schema}".file_info_delete_set_updated_at AFTER DELETE ON file_info BEGIN UPDATE torrent_entry SET updated_at = (SELECT MAX(u) + 1 FROM (SELECT MAX(updated_at) AS u FROM series UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry_group UNION ALL SELECT MAX(updated_at) AS u FROM torrent_entry)) WHERE id = old.id; END;

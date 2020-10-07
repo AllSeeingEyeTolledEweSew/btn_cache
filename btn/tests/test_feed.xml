@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>title</title>
+        <link>https://example.com/</link>
+        <description>description</description>
+        <language>en-us</language>
+        <lastBuildDate>Mon, 01 Jan 2000 01:02:03 +0000</lastBuildDate>
+        <docs>http://blogs.law.harvard.edu/tech/rss</docs>
+        <generator>generator</generator>
+        <item>
+            <title><![CDATA[title]]></title>
+            <description><![CDATA[description]]></description>
+            <pubDate>Mon, 01 Jan 00:00:05 +0000</pubDate>
+            <link>https://broadcasthe.net/torrents.php?action=download&amp;torrent_pass=dummy_pass&amp;id=5</link>
+            <guid>https://broadcasthe.net/torrents.php?action=reqlink&amp;id=5</guid>
+            <comments>genre1, genre2</comments>
+            <dc:creator>Anonymous</dc:creator>
+        </item>
+        <item>
+            <title><![CDATA[title]]></title>
+            <description><![CDATA[description]]></description>
+            <pubDate>Mon, 01 Jan 00:00:04 +0000</pubDate>
+            <link>https://broadcasthe.net/torrents.php?action=download&amp;torrent_pass=dummy_pass&amp;id=4</link>
+            <guid>https://broadcasthe.net/torrents.php?action=reqlink&amp;id=4</guid>
+            <comments>genre1, genre2</comments>
+            <dc:creator>Anonymous</dc:creator>
+        </item>
+    </channel>
+</rss>
