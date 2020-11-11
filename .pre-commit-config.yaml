@@ -36,7 +36,6 @@ repos:
         - flake8-bugbear
         - flake8-comprehensions
         - flake8-eradicate
-        - flake8-executable
         - flake8-logging-format
         - flake8-mutable
         - pep8-naming
@@ -49,3 +48,12 @@ repos:
       files: btn/templates/metadata_1.0.0.sql
       args: [btn/templates/metadata_1.0.0.sql, --output, btn/sql/metadata_1.0.0.sql]
       always_run: false
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v3.3.0
+  hooks:
+    - id: trailing-whitespace
+    - id: mixed-line-ending
+    - id: check-yaml
+    - id: check-toml
+    - id: check-merge-conflict
+    - id: check-executables-have-shebangs
