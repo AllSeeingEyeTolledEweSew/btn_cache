@@ -47,11 +47,13 @@ def _snatch_entry_json_to_row(entry: api_types.SnatchEntry) -> _SnatchEntryRow:
     )
 
 
-_MIGRATIONS = dbver.SemverMigrations(application_id=1194369890)
+_MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
+    application_id=1194369890
+)
 
 
 @_MIGRATIONS.migrates(0, 1000000)
-def _migrate_1(conn: apsw.Connection, schema: str = "main") -> None:
+def _migrate_1(conn: dbver.Connection, schema: str = "main") -> None:
     assert schema == "main"
     conn.cursor().execute(
         "create table snatchlist (id integer primary key, downloaded integer, "

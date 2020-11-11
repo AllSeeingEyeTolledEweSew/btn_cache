@@ -150,11 +150,13 @@ def _te_json_to_row_array(*entries: api_types.TorrentEntry) -> _RowArray:
     return cast(_RowArray, tuple(zip(*row_tuples)))
 
 
-_MIGRATIONS = dbver.SemverMigrations(application_id=-1353141288)
+_MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
+    application_id=-1353141288
+)
 
 
 @_MIGRATIONS.migrates(0, 1000000)
-def _migrate_1(conn: apsw.Connection, schema: str) -> None:
+def _migrate_1(conn: dbver.Connection, schema: str) -> None:
     sql = importlib.resources.read_text(  # type: ignore
         "btn.sql", "metadata_1.0.0.sql"
     )

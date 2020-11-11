@@ -16,8 +16,6 @@ from typing import Protocol
 from typing import Tuple
 from typing import TypeVar
 
-import apsw
-
 # Support goals:
 #  - sqlite, not an abstraction layer
 #  - implicit provisioning
@@ -75,14 +73,34 @@ import apsw
 
 _LOG = logging.getLogger(__name__)
 
-Connection = apsw.Connection
-Factory = Callable[[], Connection]
-Pool = Callable[[], ContextManager[Connection]]
+
+class CursorType(Protocol):
+    def execute(self, sql: str) -> Any:
+        ...
+
+    def fetchone(self) -> Tuple:
+        ...
 
 
-def null_pool(factory: Factory) -> Pool:
+_Cu_co = TypeVar("_Cu_co", bound=CursorType, covariant=True)
+
+
+class Connection(Protocol[_Cu_co]):
+    def cursor(self) -> _Cu_co:
+        ...
+
+    def close(self) -> Any:
+        ...
+
+
+_C = TypeVar("_C", bound=Connection)
+Factory = Callable[[], _C]
+Pool = Callable[[], ContextManager[_C]]
+
+
+def null_pool(factory: Factory[_C]) -> Pool[_C]:
     @contextlib.contextmanager
-    def func() -> Iterator[Connection]:
+    def func() -> Iterator[_C]:
         conn = factory()
         try:
             yield conn
@@ -99,7 +117,7 @@ class LockMode(str, enum.Enum):
 
 
 @contextlib.contextmanager
-def begin(conn: Connection, lock_mode: LockMode) -> Iterator[None]:
+def begin(conn: _C, lock_mode: LockMode) -> Iterator[None]:
     cur = conn.cursor()
     cur.execute(f"begin {lock_mode}")
     try:
@@ -108,17 +126,17 @@ def begin(conn: Connection, lock_mode: LockMode) -> Iterator[None]:
         # Per https://sqlite.org/lang_transaction.html : some errors may cause
         # an automatic rollback; we should always explicitly rollback and
         # ignore any errors.
-        try:
-            cur.execute("rollback")
-        except apsw.SQLError:
-            pass
+        # Currently not ignoring errors, because different adapters use
+        # different exception hierarchies. We could try-import a few well-known
+        # types though.
+        cur.execute("rollback")
         raise
     else:
         cur.execute("commit")
 
 
 @contextlib.contextmanager
-def begin_pool(pool: Pool, lock_mode: LockMode) -> Iterator[Connection]:
+def begin_pool(pool: Pool[_C], lock_mode: LockMode) -> Iterator[_C]:
     with pool() as conn:
         with begin(conn, lock_mode):
             yield conn
@@ -159,7 +177,7 @@ def _check_int32(value: int) -> None:
         raise ValueError("must be signed int32")
 
 
-def get_application_id(conn: Connection, schema: str = "main") -> int:
+def get_application_id(conn: _C, schema: str = "main") -> int:
     # sqlite doesn't support schema or pragma values as bind parameters.
     # we must do string-formatted sql, and check our inputs
     _check_schema(schema)
@@ -170,7 +188,7 @@ def get_application_id(conn: Connection, schema: str = "main") -> int:
 
 
 def set_application_id(
-    application_id: int, conn: Connection, schema: str = "main"
+    application_id: int, conn: _C, schema: str = "main"
 ) -> None:
     # sqlite doesn't support schema or pragma values as bind parameters.
     # we must do string-formatted sql, and check our inputs
@@ -180,7 +198,7 @@ def set_application_id(
     cur.execute(f'pragma "{schema}".application_id = {application_id}')
 
 
-def get_user_version(conn: Connection, schema: str = "main") -> int:
+def get_user_version(conn: _C, schema: str = "main") -> int:
     # sqlite doesn't support schema or pragma values as bind parameters.
     # we must do string-formatted sql, and check our inputs
     _check_schema(schema)
@@ -191,7 +209,7 @@ def get_user_version(conn: Connection, schema: str = "main") -> int:
 
 
 def set_user_version(
-    user_version: int, conn: Connection, schema: str = "main"
+    user_version: int, conn: _C, schema: str = "main"
 ) -> None:
     # sqlite doesn't support schema or pragma values as bind parameters.
     # we must do string-formatted sql, and check our inputs
@@ -201,7 +219,7 @@ def set_user_version(
     cur.execute(f'pragma "{schema}".user_version = {user_version}')
 
 
-def has_tables(conn: Connection, schema: str = "main") -> bool:
+def has_tables(conn: _C, schema: str = "main") -> bool:
     # sqlite doesn't support schema or pragma values as bind parameters.
     # we must do string-formatted sql, and check our inputs
     _check_schema(schema)
@@ -213,7 +231,7 @@ def has_tables(conn: Connection, schema: str = "main") -> bool:
 
 
 def check_application_id(
-    application_id: int, conn: Connection, schema: str = "main"
+    application_id: int, conn: _C, schema: str = "main"
 ) -> None:
     have_id = get_application_id(conn, schema=schema)
     if have_id == 0:
@@ -225,16 +243,16 @@ def check_application_id(
         )
 
 
-Migration = Callable[[Connection, str], None]
+Migration = Callable[[_C, str], None]
 _T = TypeVar("_T")
 
 
-class Migrations(abc.ABC, collections.abc.Mapping, Generic[_T]):
+class Migrations(abc.ABC, collections.abc.Mapping, Generic[_T, _C]):
     def __init__(self, *, application_id: int = 0) -> None:
         self._forward: Dict[_T, Dict[_T, Migration]] = dict()
         self._application_id = application_id
 
-    def __getitem__(self, key: _T) -> Mapping[_T, Migration]:
+    def __getitem__(self, key: _T) -> Mapping[_T, Migration[_C]]:
         return self._forward[key]
 
     def __iter__(self) -> Iterator[_T]:
@@ -243,32 +261,30 @@ class Migrations(abc.ABC, collections.abc.Mapping, Generic[_T]):
     def __len__(self) -> int:
         return len(self._forward)
 
-    def check(self, conn: Connection, schema: str = "main") -> None:
+    def check(self, conn: _C, schema: str = "main") -> None:
         if self._application_id != 0:
             check_application_id(self._application_id, conn, schema=schema)
 
-    def get_format(self, conn: Connection, schema: str = "main") -> _T:
+    def get_format(self, conn: _C, schema: str = "main") -> _T:
         self.check(conn, schema=schema)
         return self.get_format_unchecked(conn, schema=schema)
 
     @abc.abstractmethod
-    def get_format_unchecked(
-        self, conn: Connection, schema: str = "main"
-    ) -> _T:
+    def get_format_unchecked(self, conn: _C, schema: str = "main") -> _T:
         raise NotImplementedError
 
     @abc.abstractmethod
     def set_format(
-        self, new_format: _T, conn: Connection, schema: str = "main"
+        self, new_format: _T, conn: _C, schema: str = "main"
     ) -> None:
         if self._application_id != 0:
             set_application_id(self._application_id, conn, schema=schema)
 
     def add(
-        self, from_format: _T, to_format: _T, migration: Migration
-    ) -> Migration:
+        self, from_format: _T, to_format: _T, migration: Migration[_C]
+    ) -> Migration[_C]:
         @functools.wraps(migration)
-        def wrapped(conn: Connection, schema: str = "main") -> None:
+        def wrapped(conn: _C, schema: str = "main") -> None:
             migration(conn, schema)
             self.set_format(to_format, conn, schema=schema)
 
@@ -278,8 +294,8 @@ class Migrations(abc.ABC, collections.abc.Mapping, Generic[_T]):
 
     def migrates(
         self, from_format: _T, to_format: _T
-    ) -> Callable[[Migration], Migration]:
-        def wrap(migration: Migration) -> Migration:
+    ) -> Callable[[Migration[_C]], Migration[_C]]:
+        def wrap(migration: Migration[_C]) -> Migration[_C]:
             return self.add(from_format, to_format, migration)
 
         return wrap
@@ -293,13 +309,13 @@ class _SupportsLessThan(Protocol):
 _LT = TypeVar("_LT", bound=_SupportsLessThan)
 
 
-class VersionMigrations(Migrations[_LT]):
+class VersionMigrations(Migrations[_LT, _C]):
     def is_breaking(self, from_format: _LT, to_format: _LT) -> bool:
         return bool(from_format)
 
     def add(
-        self, from_format: _LT, to_format: _LT, migration: Migration
-    ) -> Migration:
+        self, from_format: _LT, to_format: _LT, migration: Migration[_C]
+    ) -> Migration[_C]:
         if not from_format < to_format:
             raise AssertionError(
                 f"{from_format} -> {to_format}: version does not increase"
@@ -308,7 +324,7 @@ class VersionMigrations(Migrations[_LT]):
 
     def upgrade(
         self,
-        conn: Connection,
+        conn: _C,
         schema: str = "main",
         *,
         condition: Callable[[_LT, _LT], Any] = None,
@@ -329,30 +345,23 @@ class VersionMigrations(Migrations[_LT]):
             if not allowed:
                 break
             new = max(allowed)
-            if _LOG.isEnabledFor(logging.DEBUG):
-                _LOG.debug(
-                    "%s: upgrading to version %s",
-                    conn.db_filename(schema),
-                    new,
-                )
+            _LOG.debug("upgrading to version %s", new)
             migrations[new](conn, schema)
             cur = new
         return cur
 
 
-class UserVersionMigrations(VersionMigrations[int]):
-    def get_format_unchecked(
-        self, conn: Connection, schema: str = "main"
-    ) -> int:
+class UserVersionMigrations(VersionMigrations[int, _C]):
+    def get_format_unchecked(self, conn: _C, schema: str = "main") -> int:
         return get_user_version(conn, schema=schema)
 
     def set_format(
-        self, new_format: int, conn: Connection, schema: str = "main"
+        self, new_format: int, conn: _C, schema: str = "main"
     ) -> None:
         super().set_format(new_format, conn, schema=schema)
         set_user_version(new_format, conn, schema=schema)
 
 
-class SemverMigrations(UserVersionMigrations):
+class SemverMigrations(UserVersionMigrations[_C]):
     def is_breaking(self, from_format: int, to_format: int) -> bool:
         return semver_is_breaking(from_format, to_format)

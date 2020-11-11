@@ -322,9 +322,9 @@ class CheckApplicationIdTest(unittest.TestCase):
             dbver.check_application_id(1, self.conn, "other schema")
 
 
-class NamedFormatMigrations(dbver.Migrations[Optional[str]]):
+class NamedFormatMigrations(dbver.Migrations[Optional[str], dbver.Connection]):
     def get_format_unchecked(
-        self, conn: apsw.Connection, schema: str = "main"
+        self, conn: dbver.Connection, schema: str = "main"
     ) -> Optional[str]:
         if dbver.get_application_id(conn, schema) == 0:
             return None
@@ -336,7 +336,7 @@ class NamedFormatMigrations(dbver.Migrations[Optional[str]]):
     def set_format(
         self,
         new_format: Optional[str],
-        conn: apsw.Connection,
+        conn: dbver.Connection,
         schema: str = "main",
     ) -> None:
         assert new_format is not None
@@ -355,7 +355,7 @@ class NamedFormatMigrationsTest(unittest.TestCase):
 
         @self.migrations.migrates(None, "A")
         def migrate_null_a(
-            conn: apsw.Connection, schema: str = "main"
+            conn: dbver.Connection, schema: str = "main"
         ) -> None:
             conn.cursor().execute(
                 f'create table "{schema}".a (a int primary key)'
@@ -363,21 +363,21 @@ class NamedFormatMigrationsTest(unittest.TestCase):
 
         @self.migrations.migrates(None, "B")
         def migrate_null_b(
-            conn: apsw.Connection, schema: str = "main"
+            conn: dbver.Connection, schema: str = "main"
         ) -> None:
             conn.cursor().execute(
                 f'create table "{schema}".b (b int primary key)'
             )
 
         @self.migrations.migrates("A", "B")
-        def migrate_a_b(conn: apsw.Connection, schema: str = "main") -> None:
+        def migrate_a_b(conn: dbver.Connection, schema: str = "main") -> None:
             cur = conn.cursor()
             cur.execute(f'create table "{schema}".b (b int primary key)')
             cur.execute(f'insert into "{schema}".b select * from "{schema}".a')
             cur.execute(f'drop table "{schema}".a')
 
         @self.migrations.migrates("B", "A")
-        def migrate_b_a(conn: apsw.Connection, schema: str = "main") -> None:
+        def migrate_b_a(conn: dbver.Connection, schema: str = "main") -> None:
             cur = conn.cursor()
             cur.execute(f'create table "{schema}".a (a int primary key)')
             cur.execute(f'insert into "{schema}".a select * from "{schema}".b')
@@ -494,16 +494,18 @@ class NamedFormatMigrationsTest(unittest.TestCase):
 
 class UserVersionMigrationsTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.migrations = dbver.UserVersionMigrations(application_id=1)
+        self.migrations = dbver.UserVersionMigrations[dbver.Connection](
+            application_id=1
+        )
 
         @self.migrations.migrates(0, 1)
-        def migrate_0_1(conn: apsw.Connection, schema: str) -> None:
+        def migrate_0_1(conn: dbver.Connection, schema: str) -> None:
             conn.cursor().execute(
                 f'create table "{schema}".a (a int primary key)'
             )
 
         @self.migrations.migrates(1, 2)
-        def migrate_1_2(conn: apsw.Connection, schema: str) -> None:
+        def migrate_1_2(conn: dbver.Connection, schema: str) -> None:
             cur = conn.cursor()
             cur.execute(f'create table "{schema}".a2 (a int primary key)')
             cur.execute(
@@ -566,21 +568,23 @@ class UserVersionMigrationsTest(unittest.TestCase):
 
 class SemverMigrationsTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.migrations = dbver.SemverMigrations(application_id=1)
+        self.migrations = dbver.SemverMigrations[dbver.Connection](
+            application_id=1
+        )
 
         @self.migrations.migrates(0, 1000000)
-        def migrate_1(conn: apsw.Connection, schema: str) -> None:
+        def migrate_1(conn: dbver.Connection, schema: str) -> None:
             conn.cursor().execute(
                 f'create table "{schema}".a (a int primary key)'
             )
 
         @self.migrations.migrates(1000000, 1001000)
-        def migrate_1dot1(conn: apsw.Connection, schema: str) -> None:
+        def migrate_1dot1(conn: dbver.Connection, schema: str) -> None:
             cur = conn.cursor()
             cur.execute(f'alter table "{schema}".a add column t text')
 
         @self.migrations.migrates(1001000, 2000000)
-        def migrate_2(conn: apsw.Connection, schema: str) -> None:
+        def migrate_2(conn: dbver.Connection, schema: str) -> None:
             cur = conn.cursor()
             cur.execute(
                 f'create table "{schema}".a2 (a int primary key, t text)'

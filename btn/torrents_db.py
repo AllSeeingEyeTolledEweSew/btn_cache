@@ -7,11 +7,13 @@ import better_bencode
 
 from . import dbver
 
-_MIGRATIONS = dbver.SemverMigrations(application_id=257675987)
+_MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
+    application_id=257675987
+)
 
 
 @_MIGRATIONS.migrates(0, 1000000)
-def _migrate_1(conn: apsw.Connection, schema: str = "main") -> None:
+def _migrate_1(conn: dbver.Connection, schema: str = "main") -> None:
     assert schema == "main"
     conn.cursor().execute(
         "create table info (id integer primary key, info blob not null)"
