@@ -249,7 +249,7 @@ _T = TypeVar("_T")
 
 class Migrations(abc.ABC, collections.abc.Mapping, Generic[_T, _C]):
     def __init__(self, *, application_id: int = 0) -> None:
-        self._forward: Dict[_T, Dict[_T, Migration]] = dict()
+        self._forward: Dict[_T, Dict[_T, Migration]] = {}
         self._application_id = application_id
 
     def __getitem__(self, key: _T) -> Mapping[_T, Migration[_C]]:
@@ -288,7 +288,7 @@ class Migrations(abc.ABC, collections.abc.Mapping, Generic[_T, _C]):
             migration(conn, schema)
             self.set_format(to_format, conn, schema=schema)
 
-        self._forward.setdefault(from_format, dict())
+        self._forward.setdefault(from_format, {})
         self._forward[from_format][to_format] = wrapped
         return wrapped
 

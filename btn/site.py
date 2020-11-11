@@ -56,13 +56,13 @@ class UserAccess:
         ):
             raise ValueError()
         query = urllib.parse.urlencode(
-            dict(
-                feed=name,
-                user=self._auth.user_id,
-                auth=self._auth.auth,
-                passkey=self._auth.passkey,
-                authkey=self._auth.authkey,
-            )
+            {
+                "feed": name,
+                "user": self._auth.user_id,
+                "auth": self._auth.auth,
+                "passkey": self._auth.passkey,
+                "authkey": self._auth.authkey,
+            }
         )
         url = urllib.parse.urlunparse(
             ("https", "broadcasthe.net", "/feeds.php", None, query, None)
@@ -73,11 +73,11 @@ class UserAccess:
         if self._auth.passkey is None:
             raise ValueError()
         query = urllib.parse.urlencode(
-            dict(
-                action="download",
-                id=torrent_entry_id,
-                torrent_pass=self._auth.passkey,
-            )
+            {
+                "action": "download",
+                "id": torrent_entry_id,
+                "torrent_pass": self._auth.passkey,
+            }
         )
         url = urllib.parse.urlunparse(
             ("https", "broadcasthe.net", "/torrents.php", None, query, None)

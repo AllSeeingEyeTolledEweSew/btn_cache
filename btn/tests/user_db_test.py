@@ -19,7 +19,7 @@ class UpdateSnatchEntriesTest(lib.BaseTest):
             Seedtime="86400",
             IsSeeding="1",
             SnatchTime="2000-01-01 01:02:03",
-            TorrentInfo=dict(
+            TorrentInfo=api_types.SnatchEntryTorrentInfo(
                 GroupName="S01E01",
                 Series="Example",
                 Year="2000",

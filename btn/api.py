@@ -82,7 +82,7 @@ class API:
 
         return api_response["result"]
 
-    def getTorrents(
+    def getTorrents(  # noqa: N802
         self, results: int = 10, offset: int = 0, **kwargs: Any
     ) -> api_types.GetTorrentsResult:
         result = cast(
@@ -96,7 +96,7 @@ class API:
         )
         return result
 
-    def getUserSnatchlist(
+    def getUserSnatchlist(  # noqa: N802
         self, results: int = 10, offset: int = 0
     ) -> api_types.GetUserSnatchlistResult:
         result = cast(

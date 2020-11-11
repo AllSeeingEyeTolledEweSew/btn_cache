@@ -23,7 +23,16 @@ repos:
   hooks:
     - id: flake8
       additional_dependencies:
+        - flake8-2020
         - flake8-bugbear
+        - flake8-comprehensions
+        - flake8-eradicate
+        - flake8-executable
+        - flake8-logging-format
+        - flake8-mutable
+        - pep8-naming
+        - flake8-tidy-imports
+        - flake8-annotations-coverage
 - repo: https://github.com/Lowess/pre-commit-hooks
   rev: v1.3.0
   hooks:

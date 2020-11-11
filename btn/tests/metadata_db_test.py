@@ -27,13 +27,13 @@ class TableState:
                 cur.execute(f"select id, updated_at from {table}"),
             )
         )
-        self.deleted = set(
+        self.deleted = {
             i
             for i, in cast(
                 Iterable[Tuple[int]],
                 cur.execute(f"select id from {table} where deleted"),
             )
-        )
+        }
 
 
 _D = TypeVar("_D", bound="TableStateDelta")

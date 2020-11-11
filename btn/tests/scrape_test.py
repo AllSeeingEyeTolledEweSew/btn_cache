@@ -212,7 +212,7 @@ class MetadataScraperTest(APIErrorsBase):
         cur = self.metadata_conn.cursor().execute(
             "select id from torrent_entry"
         )
-        self.assertEqual(set(i for i, in cur), {5, 6, 7, 8, 9})
+        self.assertEqual({i for i, in cur}, {5, 6, 7, 8, 9})
         # Second step should scrape at further offset
         wait = self.step()
         self.assertLessEqual(wait, 0)
@@ -220,7 +220,7 @@ class MetadataScraperTest(APIErrorsBase):
         cur = self.metadata_conn.cursor().execute(
             "select id from torrent_entry"
         )
-        self.assertEqual(set(i for i, in cur), {1, 2, 3, 4, 5, 6, 7, 8, 9})
+        self.assertEqual({i for i, in cur}, {1, 2, 3, 4, 5, 6, 7, 8, 9})
         # Third step should detect end of list, and restart at zero
         wait = self.step()
         self.assertLessEqual(wait, 0)
@@ -279,7 +279,7 @@ class MetadataTipScraperTest(APIErrorsBase):
         self.assertGreater(wait, 0)
         cur = self.metadata_conn.cursor()
         cur.execute("select id from torrent_entry")
-        self.assertEqual(set(i for i, in cur), {1, 2, 3, 4, 5})
+        self.assertEqual({i for i, in cur}, {1, 2, 3, 4, 5})
 
     def test_step_no_changes(self) -> None:
         wait = self.step()
@@ -331,7 +331,7 @@ TEST_SNATCH = api_types.SnatchEntry(
     Seedtime="86400",
     IsSeeding="1",
     SnatchTime="2000-01-01 01:02:03",
-    TorrentInfo=dict(
+    TorrentInfo=api_types.SnatchEntryTorrentInfo(
         GroupName="S01E01",
         Series="Example",
         Year="2000",
@@ -386,12 +386,12 @@ class SnatchlistScraperTest(APIErrorsBase):
         wait = self.step()
         self.assertLessEqual(wait, 0)
         cur = self.user_conn.cursor().execute("select id from snatchlist")
-        self.assertEqual(set(i for i, in cur), {6, 7, 8, 9, 10})
+        self.assertEqual({i for i, in cur}, {6, 7, 8, 9, 10})
 
         wait = self.step()
         self.assertGreater(wait, 0)
         cur = self.user_conn.cursor().execute("select id from snatchlist")
-        self.assertEqual(set(i for i, in cur), {1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+        self.assertEqual({i for i, in cur}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
 
         # Should restart to 0
         self.assertEqual(self.mock1.call_count, 1)
