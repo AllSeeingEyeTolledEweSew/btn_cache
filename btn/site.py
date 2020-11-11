@@ -1,3 +1,5 @@
+from typing import NamedTuple
+from typing import Optional
 import urllib.parse
 
 import requests
@@ -5,21 +7,12 @@ import requests
 from . import ratelimit
 
 
-class UserAuth:
-    def __init__(
-        self,
-        *,
-        user_id: int = None,
-        auth: str = None,
-        authkey: str = None,
-        passkey: str = None,
-        api_key: str = None
-    ) -> None:
-        self.user_id = user_id
-        self.auth = auth
-        self.authkey = authkey
-        self.passkey = passkey
-        self.api_key = api_key
+class UserAuth(NamedTuple):
+    user_id: Optional[int] = None
+    auth: Optional[str] = None
+    authkey: Optional[str] = None
+    passkey: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 class UserAccess:
