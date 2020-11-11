@@ -13,14 +13,12 @@ import unittest
 import unittest.mock
 
 import apsw
-import better_bencode
 import requests
 import requests_mock
 import requests_mock.adapter
 
 from btn import api as api_lib
 from btn import api_types
-from btn import dbver
 from btn import metadata_db
 from btn import scrape
 from btn import site
@@ -320,110 +318,6 @@ class MetadataTipScraperSiteErrorTest(APITestBase, UserAccessErrorsBase):
             metadata_pool=self.metadata_pool,
             user_access=site.UserAccess(auth=TEST_AUTH),
         )
-
-    def step(self) -> float:
-        return self.scraper.step()
-
-
-class TorrentFileScraperTest(RequestsMockerTestBase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.metadata_conn = apsw.Connection(":memory:")
-        self.metadata_pool = lambda: nullcontext(self.metadata_conn)
-
-        self.torrents_conn = apsw.Connection(":memory:")
-        self.torrents_pool = lambda: nullcontext(self.torrents_conn)
-
-        self.scraper = scrape.TorrentFileScraper(
-            metadata_pool=self.metadata_pool,
-            torrents_pool=self.torrents_pool,
-            user_access=site.UserAccess(auth=TEST_AUTH),
-        )
-
-        self.requests_mocker.get(
-            "https://broadcasthe.net/torrents.php?action=download&id=1"
-            "&torrent_pass=dummy_passkey",
-            complete_qs=True,
-            content=better_bencode.dumps(
-                {b"info": {b"name": b"test1.txt", b"length": 123}}
-            ),
-        )
-        self.requests_mocker.get(
-            "https://broadcasthe.net/torrents.php?action=download&id=2"
-            "&torrent_pass=dummy_passkey",
-            complete_qs=True,
-            content=better_bencode.dumps(
-                {b"info": {b"name": b"test2.txt", b"length": 234}}
-            ),
-        )
-        self.requests_mocker.get(
-            "https://broadcasthe.net/torrents.php?action=download&id=3"
-            "&torrent_pass=dummy_passkey",
-            complete_qs=True,
-            content=better_bencode.dumps(
-                {b"info": {b"name": b"test3.txt", b"length": 345}}
-            ),
-        )
-
-    def step(self) -> float:
-        return self.scraper.step()
-
-    def test_step_with_empty_db(self) -> None:
-        wait = self.step()
-        self.assertGreater(wait, 0)
-        # dbs should still be empty
-        self.assertFalse(dbver.has_tables(self.metadata_conn))
-        self.assertFalse(dbver.has_tables(self.torrents_conn))
-
-    def test_step_with_some_data(self) -> None:
-        metadata_db.upgrade(self.metadata_conn)
-        for i in range(1, 4):
-            entry = TEST_ENTRY.copy()
-            entry["TorrentID"] = str(i)
-            metadata_db.TorrentEntriesUpdate(entry).apply(self.metadata_conn)
-
-        while True:
-            wait = self.step()
-            if wait > 0:
-                break
-
-        cur = self.metadata_conn.cursor().execute(
-            "select id, file_index from file_info"
-        )
-        self.assertEqual(cur.fetchall(), [(1, 0), (2, 0), (3, 0)])
-        cur = self.torrents_conn.cursor().execute("select id from info")
-        self.assertEqual(cur.fetchall(), [(1,), (2,), (3,)])
-
-    def test_run_and_terminate(self) -> None:
-        def thread():
-            time.sleep(0.25)
-            self.scraper.terminate()
-
-        threading.Thread(target=thread).start()
-        self.scraper.run()
-
-
-class TorrentFileScraperSiteErrorTest(UserAccessErrorsBase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.metadata_conn = apsw.Connection(":memory:")
-        self.metadata_pool = lambda: nullcontext(self.metadata_conn)
-
-        self.torrents_conn = apsw.Connection(":memory:")
-        self.torrents_pool = lambda: nullcontext(self.torrents_conn)
-
-        self.scraper = scrape.TorrentFileScraper(
-            metadata_pool=self.metadata_pool,
-            torrents_pool=self.torrents_pool,
-            user_access=site.UserAccess(auth=TEST_AUTH),
-        )
-
-        # Add some data, which triggers the scraper to access the site
-        metadata_db.upgrade(self.metadata_conn)
-        for i in range(1, 4):
-            entry = TEST_ENTRY.copy()
-            entry["TorrentID"] = str(i)
-            metadata_db.TorrentEntriesUpdate(entry).apply(self.metadata_conn)
 
     def step(self) -> float:
         return self.scraper.step()

@@ -5,12 +5,9 @@
 
 import abc
 import contextlib
-import heapq
 import logging
 import threading
 import time
-from typing import cast
-from typing import Iterable
 from typing import Iterator
 from typing import List
 from typing import Tuple
@@ -26,7 +23,6 @@ from . import dbver
 from . import metadata_db
 from . import ratelimit
 from . import site
-from . import torrents_db
 from . import user_db
 
 _LOG = logging.getLogger(__name__)
@@ -34,6 +30,11 @@ _LOG = logging.getLogger(__name__)
 
 class NonFatal(Exception):
     pass
+
+
+# NB: We used to have a TorrentFileScraper that would download torrent files
+# from the site if we didn't have file_info for them. Staff does not like this!
+# Do not do it.
 
 
 class _Base(daemon.Daemon):
@@ -167,14 +168,6 @@ def _user_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
         yield (conn, version)
 
 
-@contextlib.contextmanager
-def _torrents_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
-    with dbver.begin_pool(pool, dbver.LockMode.IMMEDIATE) as conn:
-        version = torrents_db.upgrade(conn)
-        dbver.semver_check_breaking(version, _TORRENTS_VERSION_SUPPORTED)
-        yield (conn, version)
-
-
 class MetadataScraper(_API, _Pool):
     def __init__(
         self,
@@ -259,67 +252,6 @@ class MetadataTipScraper(_API, _Pool, _UserAccess):
                 update.apply(conn)
             self._changes = False
         return 60
-
-
-class TorrentFileScraper(_UserAccess, _Pool):
-    def __init__(
-        self,
-        *,
-        metadata_pool: dbver.Pool,
-        user_access: site.UserAccess,
-        torrents_pool: dbver.Pool = None,
-        wait=True
-    ) -> None:
-        _UserAccess.__init__(self, user_access=user_access, wait=wait)
-        _Pool.__init__(self, wait=wait)
-        self._metadata_pool = metadata_pool
-        self._torrents_pool = torrents_pool
-
-        self._queue: List[int] = []
-        self._updated_at = -1
-
-    def _update_queue(self) -> None:
-        with _meta_read(self._metadata_pool) as (conn, version):
-            if version == 0:
-                return
-            cur = conn.cursor()
-            cur.execute(
-                "select torrent_entry.id, torrent_entry.updated_at "
-                "from torrent_entry indexed by torrent_entry_on_updated_at "
-                "left join file_info on torrent_entry.id = file_info.id "
-                "where file_info.id is null "
-                "and (not torrent_entry.deleted)  "
-                "and torrent_entry.updated_at > ? "
-                "order by torrent_entry.updated_at",
-                (self._updated_at,),
-            )
-            for torrent_id, updated_at in cast(Iterable[Tuple[int, int]], cur):
-                self._updated_at = max(self._updated_at, updated_at)
-                heapq.heappush(self._queue, -torrent_id)
-
-    def _step_inner(self) -> float:
-        self._update_queue()
-        if not self._queue:
-            return 5
-        torrent_id = -self._queue[0]
-        _LOG.info(
-            "fetching torrent file for %d, %d left in queue",
-            torrent_id,
-            len(self._queue),
-        )
-        resp = self._user_access.get_torrent(torrent_id)
-        resp.raise_for_status()
-        meta_update = metadata_db.TorrentFileUpdate(torrent_id, resp.content)
-        with _meta_write(self._metadata_pool) as (conn, _):
-            meta_update.apply(conn)
-        if self._torrents_pool is not None:
-            torrent_update = torrents_db.TorrentFileUpdate(
-                torrent_id, resp.content
-            )
-            with _torrents_write(self._torrents_pool) as (conn, _):
-                torrent_update.apply(conn)
-        heapq.heappop(self._queue)
-        return 0
 
 
 class SnatchlistScraper(_API, _Pool):

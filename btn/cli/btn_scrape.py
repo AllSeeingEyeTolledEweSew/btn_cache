@@ -12,7 +12,6 @@ import threading
 from typing import Any
 from typing import Dict
 from typing import List
-from typing import Optional
 from typing import Set
 
 import apsw
@@ -65,11 +64,10 @@ def main() -> None:
     )
     parser.add_argument("--metadata_db", required=True)
     parser.add_argument("--user_db", required=True)
-    parser.add_argument("--torrents_db")
     parser.add_argument(
         "--disable",
         action="append",
-        choices=("metadata", "metadata_tip", "torrent_files", "snatchlist"),
+        choices=("metadata", "metadata_tip", "snatchlist"),
     )
 
     parser.add_argument("--api_max_calls", type=int, default=150)
@@ -137,20 +135,6 @@ def main() -> None:
 
     user_pool = dbver.null_pool(user_factory)
 
-    if args.torrents_db:
-
-        def torrents_factory() -> apsw.Connection:
-            conn = apsw.Connection(args.torrents_db)
-            conn.setbusytimeout(5000)
-            cur = conn.cursor()
-            cur.execute("pragma trusted_schema = OFF")
-            cur.execute("pragma journal_mode = WAL")
-            return conn
-
-        torrents_pool: Optional[dbver.Pool] = dbver.null_pool(torrents_factory)
-    else:
-        torrents_pool = None
-
     disable: Set[list] = set(args.disable) if args.disable else set()
 
     daemons: Dict[str, daemon_lib.Daemon] = {}
@@ -161,12 +145,6 @@ def main() -> None:
     if "metadata_tip" not in disable:
         daemons["metadata_tip_scraper"] = scrape.MetadataTipScraper(
             api=api, user_access=user_access, metadata_pool=metadata_pool
-        )
-    if "torrent_files" not in disable:
-        daemons["torrent_file_scraper"] = scrape.TorrentFileScraper(
-            metadata_pool=metadata_pool,
-            user_access=user_access,
-            torrents_pool=torrents_pool,
         )
     if "snatchlist" not in disable:
         daemons["snatchlist_scraper"] = scrape.SnatchlistScraper(
