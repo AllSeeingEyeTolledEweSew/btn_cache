@@ -1,12 +1,8 @@
-import os
 import threading
-import tempfile
 import time
 import unittest
 import unittest.mock
-from typing import Optional
 
-import apsw
 import requests
 import requests_mock
 
@@ -70,16 +66,17 @@ class APIRateLimiterTest(unittest.TestCase):
             limiter()
         # Next call should block
         # Set up a thread to change us to non-blocking after a wait time
+
         def thread():
             time.sleep(0.1)
             limiter.set_blocking(False)
+
         threading.Thread(target=thread).start()
         with self.assertRaises(ratelimit.WouldBlock):
             limiter()
 
 
 class RateLimiterTest(unittest.TestCase):
-
     def test_burst_without_blocking(self) -> None:
         limiter = ratelimit.RateLimiter(blocking=False, rate=0.001)
         for _ in range(10):
@@ -113,9 +110,11 @@ class RateLimiterTest(unittest.TestCase):
             limiter()
         # Next call should block
         # Set up a thread to change us to non-blocking after a wait time
+
         def thread():
             time.sleep(0.1)
             limiter.set_blocking(False)
+
         threading.Thread(target=thread).start()
         with self.assertRaises(ratelimit.WouldBlock):
             limiter()

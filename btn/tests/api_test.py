@@ -1,11 +1,9 @@
 import abc
-import time
-import unittest
 from typing import Any
-from typing import Sequence
 from typing import cast
+from typing import Sequence
+import unittest
 
-import apsw
 import requests
 import requests_mock
 
@@ -13,29 +11,29 @@ from btn import api as api_lib
 from btn import api_types
 from btn import ratelimit
 
-from . import mock_time
 
-
-def mock_request(mock: requests_mock.Mocker,
-                 method: str,
-                 params: Sequence[Any],
-                 result: Any = None) -> None:
+def mock_request(
+    mock: requests_mock.Mocker,
+    method: str,
+    params: Sequence[Any],
+    result: Any = None,
+) -> None:
     def match(req: requests.Request) -> bool:
         json_request = cast(api_types.Request, req.json())
         json_request["id"] = "dummy_id"
-        return json_request == api_types.Request(jsonrpc="2.0",
-                                                 id="dummy_id",
-                                                 method=method,
-                                                 params=params)
+        return json_request == api_types.Request(
+            jsonrpc="2.0", id="dummy_id", method=method, params=params
+        )
 
     response = api_types.Response(result=result, id="dummy_id")
-    mock.post("https://api.broadcasthe.net/",
-              additional_matcher=match,
-              json=response)
+    mock.post(
+        "https://api.broadcasthe.net/", additional_matcher=match, json=response
+    )
 
 
-def mock_api_error(mock: requests_mock.Mocker, message: str,
-                   code: api_types.ErrorCode) -> None:
+def mock_api_error(
+    mock: requests_mock.Mocker, message: str, code: api_types.ErrorCode
+) -> None:
     error = api_types.Error(message=message, code=code)
     response = api_types.Response(id="dummy_id", error=error)
     mock.post("https://api.broadcasthe.net/", json=response)
@@ -56,20 +54,25 @@ class APICallTestBase(unittest.TestCase, abc.ABC):
             self.call()
 
     def test_connection_error(self, mock: requests_mock.Mocker) -> None:
-        mock.post("https://api.broadcasthe.net/",
-                  exc=requests.ConnectionError())
+        mock.post(
+            "https://api.broadcasthe.net/", exc=requests.ConnectionError()
+        )
         with self.assertRaises(requests.ConnectionError):
             self.call()
 
     def test_invalid_key(self, mock: requests_mock.Mocker) -> None:
-        mock_api_error(mock, "Invalid API Key",
-                       api_types.ErrorCode.INVALID_API_KEY)
+        mock_api_error(
+            mock, "Invalid API Key", api_types.ErrorCode.INVALID_API_KEY
+        )
         with self.assertRaises(api_lib.InvalidAPIKeyError):
             self.call()
 
     def test_call_limit_exceeded(self, mock: requests_mock.Mocker) -> None:
-        mock_api_error(mock, "Call Limit Exceeded",
-                       api_types.ErrorCode.CALL_LIMIT_EXCEEDED)
+        mock_api_error(
+            mock,
+            "Call Limit Exceeded",
+            api_types.ErrorCode.CALL_LIMIT_EXCEEDED,
+        )
         with self.assertRaises(api_lib.CallLimitExceededError):
             self.call()
 
@@ -87,18 +90,20 @@ class GetTorrentsTest(APICallTestBase, unittest.TestCase):
 
     def test_limit_offset(self, mock: requests_mock.Mocker) -> None:
         result = api_types.GetTorrentsResult(results="123", torrents={})
-        mock_request(mock,
-                     "getTorrents", [self.key, {}, 100, 50],
-                     result=result)
+        mock_request(
+            mock, "getTorrents", [self.key, {}, 100, 50], result=result
+        )
 
         self.assertEqual(self.api.getTorrents(results=100, offset=50), result)
 
     def test_filter(self, mock: requests_mock.Mocker) -> None:
         result = api_types.GetTorrentsResult(results="123", torrents={})
-        mock_request(mock,
-                     "getTorrents", [self.key, {
-                         "Series": "Example"}, 10, 0],
-                     result=result)
+        mock_request(
+            mock,
+            "getTorrents",
+            [self.key, {"Series": "Example"}, 10, 0],
+            result=result,
+        )
 
         self.assertEqual(self.api.getTorrents(Series="Example"), result)
 
@@ -110,20 +115,21 @@ class GetUserSnatchlistTest(APICallTestBase, unittest.TestCase):
 
     def test_call(self, mock: requests_mock.Mocker) -> None:
         result = api_types.GetUserSnatchlistResult(results="123", torrents={})
-        mock_request(mock,
-                     "getUserSnatchlist", [self.key, 10, 0],
-                     result=result)
+        mock_request(
+            mock, "getUserSnatchlist", [self.key, 10, 0], result=result
+        )
 
         self.assertEqual(self.api.getUserSnatchlist(), result)
 
     def test_limit_offset(self, mock: requests_mock.Mocker) -> None:
         result = api_types.GetUserSnatchlistResult(results="123", torrents={})
-        mock_request(mock,
-                     "getUserSnatchlist", [self.key, 100, 50],
-                     result=result)
+        mock_request(
+            mock, "getUserSnatchlist", [self.key, 100, 50], result=result
+        )
 
-        self.assertEqual(self.api.getUserSnatchlist(results=100, offset=50),
-                         result)
+        self.assertEqual(
+            self.api.getUserSnatchlist(results=100, offset=50), result
+        )
 
 
 class RateLimitedAPITest(unittest.TestCase):
@@ -131,23 +137,23 @@ class RateLimitedAPITest(unittest.TestCase):
         self.session = requests.Session()
         self.dummy_response = api_types.Response(
             id="dummy_id",
-            result=api_types.GetTorrentsResult(results="123", torrents={}))
+            result=api_types.GetTorrentsResult(results="123", torrents={}),
+        )
         self.mock_adapter = requests_mock.adapter.Adapter()
-        self.mock_adapter.register_uri("post",
-                                       "https://api.broadcasthe.net/",
-                                       json=self.dummy_response)
+        self.mock_adapter.register_uri(
+            "post", "https://api.broadcasthe.net/", json=self.dummy_response
+        )
         self.session.mount("http://", self.mock_adapter)
         self.session.mount("https://", self.mock_adapter)
 
     def test_nonblocking(self) -> None:
-        self.mock_adapter.register_uri("post",
-                                       "https://api.broadcasthe.net/",
-                                       json=self.dummy_response)
-        rate_limiter = ratelimit.APIRateLimiter(
-                                                blocking=False)
-        api = api_lib.RateLimitedAPI("dummy_key",
-                                     rate_limiter,
-                                     session=self.session)
+        self.mock_adapter.register_uri(
+            "post", "https://api.broadcasthe.net/", json=self.dummy_response
+        )
+        rate_limiter = ratelimit.APIRateLimiter(blocking=False)
+        api = api_lib.RateLimitedAPI(
+            "dummy_key", rate_limiter, session=self.session
+        )
 
         # Shouldn't block for first N calls
         for _ in range(150):
@@ -162,14 +168,16 @@ class RateLimitedAPITest(unittest.TestCase):
             id="dummy_id",
             error=api_types.Error(
                 message="Call Limit Exceeded",
-                code=api_types.ErrorCode.CALL_LIMIT_EXCEEDED))
-        self.mock_adapter.register_uri("post",
-                                       "https://api.broadcasthe.net/",
-                                       json=error_response)
+                code=api_types.ErrorCode.CALL_LIMIT_EXCEEDED,
+            ),
+        )
+        self.mock_adapter.register_uri(
+            "post", "https://api.broadcasthe.net/", json=error_response
+        )
         rate_limiter = ratelimit.APIRateLimiter(blocking=False)
-        api = api_lib.RateLimitedAPI("dummy_key",
-                                     rate_limiter,
-                                     session=self.session)
+        api = api_lib.RateLimitedAPI(
+            "dummy_key", rate_limiter, session=self.session
+        )
 
         with self.assertRaises(api_lib.CallLimitExceededError):
             api.getTorrents()

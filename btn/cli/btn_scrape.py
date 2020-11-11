@@ -2,39 +2,42 @@
 # accompanying UNLICENSE file.
 
 import argparse
+import concurrent.futures
+import json
 import logging
 import os
 import signal
 import sys
 import threading
-import time
-
-import concurrent.futures
 from typing import Any
-from btn import scrape
-from btn import daemon
 from typing import Dict
-from btn import ratelimit
-from btn import api as api_lib
-from typing import Set
-import json
-from btn import site
-import apsw
-from btn import dbver
-from typing import Optional
 from typing import List
+from typing import Optional
+from typing import Set
+
+import apsw
 import requests
 
+from btn import api as api_lib
+from btn import daemon as daemon_lib
+from btn import dbver
+from btn import ratelimit
+from btn import scrape
+from btn import site
+
 _LOG = logging.getLogger(__name__)
+
 
 class Error(Exception):
     pass
 
+
 class FatalError(Error):
     pass
 
-class ParentChecker(daemon.Daemon):
-    def __init__(self, expected_parent_pid:int) -> None:
+
+class ParentChecker(daemon_lib.Daemon):
+    def __init__(self, expected_parent_pid: int) -> None:
         self.expected_parent_pid = expected_parent_pid
         self._condition = threading.Condition()
         self._terminated = False
@@ -52,32 +55,29 @@ class ParentChecker(daemon.Daemon):
             with self._condition:
                 self._condition.wait_for(lambda: self._terminated, timeout=5)
 
+
 def main() -> None:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--verbose", "-v", action="count")
-    parser.add_argument("--auth_file", type=argparse.FileType("r"),
-            required=True)
+    parser.add_argument(
+        "--auth_file", type=argparse.FileType("r"), required=True
+    )
     parser.add_argument("--metadata_db", required=True)
     parser.add_argument("--user_db", required=True)
     parser.add_argument("--torrents_db")
-    parser.add_argument("--disable", action="append", choices=("metadata", "metadata_tip", "torrent_files", "snatchlist"))
+    parser.add_argument(
+        "--disable",
+        action="append",
+        choices=("metadata", "metadata_tip", "torrent_files", "snatchlist"),
+    )
 
-    parser.add_argument(
-        "--api_max_calls",
-        type=int,
-        default=150)
-    parser.add_argument(
-        "--api_period",
-        type=int,
-        default=3600)
-    parser.add_argument(
-        "--web_request_rate", type=float, default=0.2)
-    parser.add_argument(
-        "--web_request_burst", type=float, default=10)
+    parser.add_argument("--api_max_calls", type=int, default=150)
+    parser.add_argument("--api_period", type=int, default=3600)
+    parser.add_argument("--web_request_rate", type=float, default=0.2)
+    parser.add_argument("--web_request_burst", type=float, default=10)
 
-    parser.add_argument(
-        "--snatchlist_period", type=float, default=3600)
+    parser.add_argument("--snatchlist_period", type=float, default=3600)
 
     parser.add_argument("--parent", type=int)
 
@@ -88,26 +88,32 @@ def main() -> None:
     else:
         level = logging.INFO
 
-    logging.basicConfig(stream=sys.stdout,
-                        level=level,
-                        format="%(asctime)s %(levelname)s %(threadName)s "
-                        "%(filename)s:%(lineno)d %(message)s")
+    logging.basicConfig(
+        stream=sys.stdout,
+        level=level,
+        format="%(asctime)s %(levelname)s %(threadName)s "
+        "%(filename)s:%(lineno)d %(message)s",
+    )
 
     session = requests.Session()
 
-    rate_limiter = ratelimit.RateLimiter(rate=args.web_request_rate,
-            burst=args.web_request_burst)
-    api_rate_limiter = ratelimit.APIRateLimiter(max_calls=args.api_max_calls,
-            period=args.api_period)
+    rate_limiter = ratelimit.RateLimiter(
+        rate=args.web_request_rate, burst=args.web_request_burst
+    )
+    api_rate_limiter = ratelimit.APIRateLimiter(
+        max_calls=args.api_max_calls, period=args.api_period
+    )
 
     auth = site.UserAuth(**json.load(args.auth_file))
 
-    user_access = site.UserAccess(auth=auth, session=session,
-            rate_limiter=rate_limiter)
+    user_access = site.UserAccess(
+        auth=auth, session=session, rate_limiter=rate_limiter
+    )
     if auth.api_key is None:
         raise ValueError("api_key is required")
-    api = api_lib.RateLimitedAPI(auth.api_key, rate_limiter=api_rate_limiter,
-            session=session)
+    api = api_lib.RateLimitedAPI(
+        auth.api_key, rate_limiter=api_rate_limiter, session=session
+    )
 
     def metadata_factory() -> apsw.Connection:
         conn = apsw.Connection(args.metadata_db)
@@ -118,6 +124,7 @@ def main() -> None:
         cur.execute("pragma trusted_schema = OFF")
         cur.execute("pragma journal_mode = WAL")
         return conn
+
     metadata_pool = dbver.null_pool(metadata_factory)
 
     def user_factory() -> apsw.Connection:
@@ -127,9 +134,11 @@ def main() -> None:
         cur.execute("pragma trusted_schema = OFF")
         cur.execute("pragma journal_mode = WAL")
         return conn
+
     user_pool = dbver.null_pool(user_factory)
 
     if args.torrents_db:
+
         def torrents_factory() -> apsw.Connection:
             conn = apsw.Connection(args.torrents_db)
             conn.setbusytimeout(5000)
@@ -137,33 +146,40 @@ def main() -> None:
             cur.execute("pragma trusted_schema = OFF")
             cur.execute("pragma journal_mode = WAL")
             return conn
-        torrents_pool:Optional[dbver.Pool] = dbver.null_pool(torrents_factory)
+
+        torrents_pool: Optional[dbver.Pool] = dbver.null_pool(torrents_factory)
     else:
         torrents_pool = None
 
-    disable:Set[list] = set(args.disable) if args.disable else set()
+    disable: Set[list] = set(args.disable) if args.disable else set()
 
-    daemons:Dict[str, daemon.Daemon] = {}
+    daemons: Dict[str, daemon_lib.Daemon] = {}
     if "metadata" not in disable:
-        daemons["metadata_scraper"] = scrape.MetadataScraper(api=api,
-                metadata_pool=metadata_pool)
+        daemons["metadata_scraper"] = scrape.MetadataScraper(
+            api=api, metadata_pool=metadata_pool
+        )
     if "metadata_tip" not in disable:
-        daemons["metadata_tip_scraper"] = scrape.MetadataTipScraper(api=api,
-            user_access=user_access, metadata_pool=metadata_pool)
+        daemons["metadata_tip_scraper"] = scrape.MetadataTipScraper(
+            api=api, user_access=user_access, metadata_pool=metadata_pool
+        )
     if "torrent_files" not in disable:
-        daemons["torrent_file_scraper"] = scrape.TorrentFileScraper(metadata_pool=metadata_pool,
-            user_access=user_access, torrents_pool=torrents_pool)
+        daemons["torrent_file_scraper"] = scrape.TorrentFileScraper(
+            metadata_pool=metadata_pool,
+            user_access=user_access,
+            torrents_pool=torrents_pool,
+        )
     if "snatchlist" not in disable:
-        daemons["snatchlist_scraper"] = scrape.SnatchlistScraper(api=api,
-                user_pool=user_pool, period=args.snatchlist_period)
+        daemons["snatchlist_scraper"] = scrape.SnatchlistScraper(
+            api=api, user_pool=user_pool, period=args.snatchlist_period
+        )
 
     if args.parent:
         daemons["parent_checker"] = ParentChecker(args.parent)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
 
-    def signal_handler(signum:int, _:Any) -> None:
-        _LOG.info("terminating due to: %s", signal.strsignal(signum))
+    def signal_handler(signum: int, _: Any) -> None:
+        _LOG.info("terminating due to signal %d", signum)
         for daemon in daemons.values():
             daemon.terminate()
 
@@ -173,14 +189,17 @@ def main() -> None:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        futures:List[concurrent.futures.Future] = []
+        futures: List[concurrent.futures.Future] = []
         for name, daemon in daemons.items():
-            executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix=name)
+            executor = concurrent.futures.ThreadPoolExecutor(
+                thread_name_prefix=name
+            )
             futures.append(executor.submit(daemon.run))
 
         # Wait for any daemon to die or be terminated
-        concurrent.futures.wait(futures,
-                return_when=concurrent.futures.FIRST_COMPLETED)
+        concurrent.futures.wait(
+            futures, return_when=concurrent.futures.FIRST_COMPLETED
+        )
 
         # Ensure all daemons are terminated; all are killed if one dies
         for daemon in daemons.values():

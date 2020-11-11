@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 79
+
+[tool.setuptools_scm]
+
+[tool.isort]
+profile = "google"
+single_line_exclusions = []
+known_third_party = ["apsw"]
+src_paths = ["btn"]

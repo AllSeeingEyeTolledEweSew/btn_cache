@@ -1,7 +1,7 @@
 import abc
 
-class Daemon(abc.ABC):
 
+class Daemon(abc.ABC):
     @abc.abstractmethod
     def terminate(self) -> None:
         raise NotImplementedError

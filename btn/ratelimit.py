@@ -1,16 +1,10 @@
-import abc
-import contextlib
 import logging
 import math
 import threading
 import time
 from typing import Any
 from typing import Callable
-from typing import Iterator
 from typing import List
-from typing import Optional
-from typing import Tuple
-from typing import cast
 
 import requests
 
@@ -22,7 +16,7 @@ class Error(Exception):
 
 
 class WouldBlock(Error):
-    def __init__(self, wait_time:float=None) -> None:
+    def __init__(self, wait_time: float = None) -> None:
         self.wait_time = wait_time
 
 
@@ -31,28 +25,30 @@ class APIRateLimiter:
     _MAX_CALLS = 150
     _PERIOD = 3600
 
-    def __init__(self,
-                 *,
-                 max_calls:int=_MAX_CALLS,
-                 period:float=_PERIOD,
-                 blocking: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        max_calls: int = _MAX_CALLS,
+        period: float = _PERIOD,
+        blocking: bool = True
+    ) -> None:
         self._max_calls = max_calls
         self._period = period
         self._blocking = blocking
         self._condition = threading.Condition()
         # sorted monotonic timestamps of calls, in interval (now - period, now]
-        self._calls:List[float] = []
+        self._calls: List[float] = []
 
     def get_blocking(self) -> bool:
         with self._condition:
             return self._blocking
 
-    def set_blocking(self, blocking:bool) -> None:
+    def set_blocking(self, blocking: bool) -> None:
         with self._condition:
             self._blocking = blocking
             self._condition.notify_all()
 
-    def _trim(self, now:float) -> None:
+    def _trim(self, now: float) -> None:
         while self._calls and self._calls[0] <= now - self._period:
             self._calls.pop(0)
         while self._calls and self._calls[-1] > now:
@@ -79,8 +75,10 @@ class APIRateLimiter:
             if len(self._calls) + 1 <= self._max_calls:
                 # Mark one call, made right now
                 self._calls.append(now)
-                _LOG.debug("making 1 call, %d remaining", max(self._max_calls -
-                    len(self._calls), 0))
+                _LOG.debug(
+                    "making 1 call, %d remaining",
+                    max(self._max_calls - len(self._calls), 0),
+                )
                 return True
             nth_oldest = self._calls[-self._max_calls]
             wait_time = max(nth_oldest + self._period - now, 0)
@@ -100,11 +98,14 @@ class APIRateLimiter:
 class RateLimiter:
     _RATE = 0.2
     _BURST = 10
-    def __init__(self,
-                 *,
-                 rate:float=_RATE,
-                 burst:float=_BURST,
-                 blocking: bool = True) -> None:
+
+    def __init__(
+        self,
+        *,
+        rate: float = _RATE,
+        burst: float = _BURST,
+        blocking: bool = True
+    ) -> None:
         self._rate = rate
         self._burst = burst
         self._blocking = blocking
@@ -115,7 +116,7 @@ class RateLimiter:
         with self._condition:
             return self._blocking
 
-    def set_blocking(self, blocking:bool) -> None:
+    def set_blocking(self, blocking: bool) -> None:
         with self._condition:
             self._blocking = blocking
             self._condition.notify_all()
@@ -144,16 +145,19 @@ class RateLimiter:
 
 
 class RequestWouldBlock(requests.RequestException):
-
-    def __init__(self, wait_time:float=None) -> None:
+    def __init__(self, wait_time: float = None) -> None:
         self.wait_time = wait_time
 
 
 class _RateLimitAdapter(requests.adapters.BaseAdapter):
     # Accept a RateLimiter rather than Callable, in case we ever get the chance
     # to adjust parameters based on returned headers
-    def __init__(self, *, rate_limiter: Callable[[], Any],
-                 upstream: requests.adapters.BaseAdapter):
+    def __init__(
+        self,
+        *,
+        rate_limiter: Callable[[], Any],
+        upstream: requests.adapters.BaseAdapter
+    ):
         super().__init__()
         self._rate_limiter = rate_limiter
         self._upstream = upstream
@@ -161,27 +165,32 @@ class _RateLimitAdapter(requests.adapters.BaseAdapter):
     def close(self) -> None:
         pass
 
-    def send(self,
-             request: Any,
-             stream: Any = False,
-             timeout: Any = None,
-             verify: Any = True,
-             cert: Any = None,
-             proxies: Any = None) -> Any:
+    def send(
+        self,
+        request: Any,
+        stream: Any = False,
+        timeout: Any = None,
+        verify: Any = True,
+        cert: Any = None,
+        proxies: Any = None,
+    ) -> Any:
         try:
             self._rate_limiter()
         except WouldBlock as exc:
             raise RequestWouldBlock(exc.wait_time)
-        return self._upstream.send(request,
-                                  stream=stream,
-                                  timeout=timeout,
-                                  verify=verify,
-                                  cert=cert,
-                                  proxies=proxies)
+        return self._upstream.send(
+            request,
+            stream=stream,
+            timeout=timeout,
+            verify=verify,
+            cert=cert,
+            proxies=proxies,
+        )
 
 
-def ratelimit_session(session: requests.Session, url_prefix: str,
-        rate_limiter:Callable[[], Any]) -> requests.Session:
+def ratelimit_session(
+    session: requests.Session, url_prefix: str, rate_limiter: Callable[[], Any]
+) -> requests.Session:
     upstream = session.get_adapter(url_prefix)
     adapter = _RateLimitAdapter(rate_limiter=rate_limiter, upstream=upstream)
     session.mount(url_prefix, adapter)

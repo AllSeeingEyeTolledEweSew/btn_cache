@@ -4,34 +4,30 @@
 """
 
 import abc
-import collections
+import contextlib
+import heapq
 import logging
-import math
 import threading
 import time
-import urllib.parse
-import heapq
-from typing import Deque
-from typing import Iterable
-from typing import List
-from typing import Sequence
-from typing import Tuple
-from typing import Iterator
 from typing import cast
+from typing import Iterable
+from typing import Iterator
+from typing import List
+from typing import Tuple
+import urllib.parse
 
 import apsw
 import feedparser
 import requests
 
 from . import api as api_lib
-from . import ratelimit
-from . import dbver
-import contextlib
-from . import metadata_db
-from . import site
-from . import user_db
-from . import torrents_db
 from . import daemon
+from . import dbver
+from . import metadata_db
+from . import ratelimit
+from . import site
+from . import torrents_db
+from . import user_db
 
 _LOG = logging.getLogger(__name__)
 
@@ -41,7 +37,6 @@ class NonFatal(Exception):
 
 
 class _Base(daemon.Daemon):
-
     def __init__(self, *, wait=True) -> None:
         self._terminated = threading.Event()
         self._condition = threading.Condition()
@@ -56,7 +51,7 @@ class _Base(daemon.Daemon):
     def _step_inner(self) -> float:
         raise NotImplementedError
 
-    def _step_wrap(self)  -> float:
+    def _step_wrap(self) -> float:
         return self._step_inner()
 
     def step(self) -> float:
@@ -65,7 +60,7 @@ class _Base(daemon.Daemon):
     def run(self) -> None:
         fail_streak = 0
         while not self._terminated.is_set():
-            wait_time:float = 0
+            wait_time: float = 0
             try:
                 wait_time = self._step_wrap()
                 fail_streak = 0
@@ -78,8 +73,9 @@ class _Base(daemon.Daemon):
                 wait_time = max(wait_time, backoff)
             if self._wait and wait_time > 0:
                 with self._condition:
-                    self._condition.wait_for(self._terminated.is_set,
-                            wait_time)
+                    self._condition.wait_for(
+                        self._terminated.is_set, wait_time
+                    )
 
 
 class _API(_Base):
@@ -111,7 +107,6 @@ class _API(_Base):
 
 
 class _Pool(_Base):
-
     def _step_wrap(self) -> float:
         try:
             return super()._step_wrap()
@@ -142,51 +137,62 @@ class _UserAccess(_Base):
         except requests.RequestException as exc:
             raise NonFatal() from exc
 
+
 _META_VERSION_SUPPORTED = 1000000
 _USER_VERSION_SUPPORTED = 1000000
 _TORRENTS_VERSION_SUPPORTED = 1000000
 
+
 @contextlib.contextmanager
-def _meta_write(pool:dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
+def _meta_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
     with dbver.begin_pool(pool, dbver.LockMode.IMMEDIATE) as conn:
         version = metadata_db.upgrade(conn)
         dbver.semver_check_breaking(version, _META_VERSION_SUPPORTED)
         yield (conn, version)
 
+
 @contextlib.contextmanager
-def _meta_read(pool:dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
+def _meta_read(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
     with dbver.begin_pool(pool, dbver.LockMode.DEFERRED) as conn:
         version = metadata_db.get_version(conn)
         dbver.semver_check_breaking(version, _META_VERSION_SUPPORTED)
         yield (conn, version)
 
+
 @contextlib.contextmanager
-def _user_write(pool:dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
+def _user_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
     with dbver.begin_pool(pool, dbver.LockMode.IMMEDIATE) as conn:
         version = user_db.upgrade(conn)
         dbver.semver_check_breaking(version, _USER_VERSION_SUPPORTED)
         yield (conn, version)
 
+
 @contextlib.contextmanager
-def _torrents_write(pool:dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
+def _torrents_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
     with dbver.begin_pool(pool, dbver.LockMode.IMMEDIATE) as conn:
         version = torrents_db.upgrade(conn)
         dbver.semver_check_breaking(version, _TORRENTS_VERSION_SUPPORTED)
         yield (conn, version)
 
 
-
 class MetadataScraper(_API, _Pool):
-    def __init__(self, *, api: api_lib.RateLimitedAPI,
-            metadata_pool:dbver.Pool, wait=True) -> None:
+    def __init__(
+        self,
+        *,
+        api: api_lib.RateLimitedAPI,
+        metadata_pool: dbver.Pool,
+        wait=True
+    ) -> None:
         _API.__init__(self, api=api, wait=wait)
         self._metadata_pool = metadata_pool
         self._offset = 0
 
     def _step_inner(self) -> float:
         _LOG.info("scraping metadata at offset %d", self._offset)
-        result = self._api.getTorrents(results=2**31, offset=self._offset)
-        update = metadata_db.UnfilteredGetTorrentsResultUpdate(self._offset, result)
+        result = self._api.getTorrents(results=2 ** 31, offset=self._offset)
+        update = metadata_db.UnfilteredGetTorrentsResultUpdate(
+            self._offset, result
+        )
         with _meta_write(self._metadata_pool) as (conn, _):
             update.apply(conn)
         if self._offset + len(result["torrents"]) >= int(result["results"]):
@@ -200,9 +206,14 @@ class MetadataScraper(_API, _Pool):
 
 
 class MetadataTipScraper(_API, _Pool, _UserAccess):
-    def __init__(self, *, api: api_lib.RateLimitedAPI,
-            metadata_pool: dbver.Pool,
-                 user_access: site.UserAccess, wait=True) -> None:
+    def __init__(
+        self,
+        *,
+        api: api_lib.RateLimitedAPI,
+        metadata_pool: dbver.Pool,
+        user_access: site.UserAccess,
+        wait=True
+    ) -> None:
         _API.__init__(self, api=api, wait=wait)
         _UserAccess.__init__(self, user_access=user_access, wait=wait)
         self._metadata_pool = metadata_pool
@@ -223,12 +234,14 @@ class MetadataTipScraper(_API, _Pool, _UserAccess):
 
         with _meta_read(self._metadata_pool) as (conn, version):
             if version == 0:
-                db_ids:List[int] = []
+                db_ids: List[int] = []
             else:
                 cur = conn.cursor()
                 cur.execute(
                     "select id from torrent_entry where not deleted "
-                    "order by time desc, id desc limit ?", (len(feed_ids), ))
+                    "order by time desc, id desc limit ?",
+                    (len(feed_ids),),
+                )
                 db_ids = [i for i, in cur]
 
         self._changes = feed_ids != db_ids
@@ -240,7 +253,7 @@ class MetadataTipScraper(_API, _Pool, _UserAccess):
     def _step_inner(self) -> float:
         self._check_changes()
         if self._changes:
-            result = self._api.getTorrents(results=2**31, offset=0)
+            result = self._api.getTorrents(results=2 ** 31, offset=0)
             update = metadata_db.UnfilteredGetTorrentsResultUpdate(0, result)
             with _meta_write(self._metadata_pool) as (conn, _):
                 update.apply(conn)
@@ -249,13 +262,14 @@ class MetadataTipScraper(_API, _Pool, _UserAccess):
 
 
 class TorrentFileScraper(_UserAccess, _Pool):
-
-    def __init__(self,
-                 *,
-                 metadata_pool: dbver.Pool,
-                 user_access: site.UserAccess,
-                 torrents_pool: dbver.Pool = None,
-                 wait=True) -> None:
+    def __init__(
+        self,
+        *,
+        metadata_pool: dbver.Pool,
+        user_access: site.UserAccess,
+        torrents_pool: dbver.Pool = None,
+        wait=True
+    ) -> None:
         _UserAccess.__init__(self, user_access=user_access, wait=wait)
         _Pool.__init__(self, wait=wait)
         self._metadata_pool = metadata_pool
@@ -276,7 +290,9 @@ class TorrentFileScraper(_UserAccess, _Pool):
                 "where file_info.id is null "
                 "and (not torrent_entry.deleted)  "
                 "and torrent_entry.updated_at > ? "
-                "order by torrent_entry.updated_at", (self._updated_at, ))
+                "order by torrent_entry.updated_at",
+                (self._updated_at,),
+            )
             for torrent_id, updated_at in cast(Iterable[Tuple[int, int]], cur):
                 self._updated_at = max(self._updated_at, updated_at)
                 heapq.heappush(self._queue, -torrent_id)
@@ -286,16 +302,20 @@ class TorrentFileScraper(_UserAccess, _Pool):
         if not self._queue:
             return 5
         torrent_id = -self._queue[0]
-        _LOG.info("fetching torrent file for %d, %d left in queue", torrent_id,
-                len(self._queue))
+        _LOG.info(
+            "fetching torrent file for %d, %d left in queue",
+            torrent_id,
+            len(self._queue),
+        )
         resp = self._user_access.get_torrent(torrent_id)
         resp.raise_for_status()
         meta_update = metadata_db.TorrentFileUpdate(torrent_id, resp.content)
         with _meta_write(self._metadata_pool) as (conn, _):
             meta_update.apply(conn)
         if self._torrents_pool is not None:
-            torrent_update = torrents_db.TorrentFileUpdate(torrent_id,
-                    resp.content)
+            torrent_update = torrents_db.TorrentFileUpdate(
+                torrent_id, resp.content
+            )
             with _torrents_write(self._torrents_pool) as (conn, _):
                 torrent_update.apply(conn)
         heapq.heappop(self._queue)
@@ -306,8 +326,14 @@ class SnatchlistScraper(_API, _Pool):
 
     _BLOCK_SIZE = 10000
 
-    def __init__(self, *, api: api_lib.RateLimitedAPI,
-            user_pool: dbver.Pool, period:float=3600, wait=True):
+    def __init__(
+        self,
+        *,
+        api: api_lib.RateLimitedAPI,
+        user_pool: dbver.Pool,
+        period: float = 3600,
+        wait=True
+    ):
         _API.__init__(self, api=api, wait=wait)
         _Pool.__init__(self, wait=wait)
         self._user_pool = user_pool
@@ -317,8 +343,9 @@ class SnatchlistScraper(_API, _Pool):
 
     def _step_inner(self) -> float:
         _LOG.info("scraping snatchlist at offset %d", self._offset)
-        result = self._api.getUserSnatchlist(results=self._BLOCK_SIZE,
-                                             offset=self._offset)
+        result = self._api.getUserSnatchlist(
+            results=self._BLOCK_SIZE, offset=self._offset
+        )
         update = user_db.GetSnatchlistResultUpdate(result)
         with _user_write(self._user_pool) as (conn, _):
             update.apply(conn)

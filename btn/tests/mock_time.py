@@ -1,9 +1,7 @@
-from __future__ import annotations
-
-import unittest.mock
 from typing import List
 from typing import Optional
 from typing import SupportsFloat
+import unittest.mock
 
 
 class WaitForever(Exception):
@@ -25,6 +23,7 @@ class MockTime:
         autoincrement: The amount of time to automatically increment time
             whenever time functions are called.
     """
+
     def __init__(self, time: SupportsFloat, autoincrement: SupportsFloat = 0):
         self._time = float(time)
         self._monotonic = 0.0
@@ -76,7 +75,7 @@ class MockTime:
         self._patches.append(patch)
         return patch
 
-    def __enter__(self) -> MockTime:
+    def __enter__(self) -> "MockTime":
         """Returns itself after enabling all time function patches."""
         self._started = True
         self.patch("time.time", new=self.time)
