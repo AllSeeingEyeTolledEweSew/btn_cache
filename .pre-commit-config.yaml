@@ -18,6 +18,15 @@ repos:
   rev: v0.790
   hooks:
     - id: mypy
+    - id: mypy
+      name: mypy37
+      args: [--python-version, "3.7", --no-warn-unused-ignores, --no-warn-redundant-casts]
+    - id: mypy
+      name: mypy38
+      args: [--python-version, "3.8", --no-warn-unused-ignores, --no-warn-redundant-casts]
+    - id: mypy
+      name: mypy39
+      args: [--python-version, "3.9", --no-warn-unused-ignores, --no-warn-redundant-casts]
 - repo: https://gitlab.com/pycqa/flake8
   rev: 3.8.4
   hooks:
