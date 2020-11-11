@@ -25,3 +25,4 @@ repos:
     - id: jinja2-render-template
       files: btn/templates/metadata_1.0.0.sql
       args: [btn/templates/metadata_1.0.0.sql, --output, btn/sql/metadata_1.0.0.sql]
+      always_run: false
