@@ -17,11 +17,11 @@ import requests
 import requests_mock
 import requests_mock.adapter
 
-from btn import api as api_lib
-from btn import api_types
-from btn import metadata_db
-from btn import scrape
-from btn import site
+from btn_cache import api as api_lib
+from btn_cache import api_types
+from btn_cache import metadata_db
+from btn_cache import scrape
+from btn_cache import site
 
 _T = TypeVar("_T")
 
@@ -253,7 +253,7 @@ class MetadataTipScraperTest(APIErrorsBase):
 
         # Set up mock response for feed
         feed_content = importlib.resources.read_binary(  # type: ignore
-            "btn.tests", "test_feed.xml"
+            "btn_cache.tests", "test_feed.xml"
         )
         # Don't need full query string for match
         self.requests_mocker.get(

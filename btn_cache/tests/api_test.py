@@ -7,9 +7,9 @@ import unittest
 import requests
 import requests_mock
 
-from btn import api as api_lib
-from btn import api_types
-from btn import ratelimit
+from btn_cache import api as api_lib
+from btn_cache import api_types
+from btn_cache import ratelimit
 
 
 def mock_request(

@@ -1,7 +1,7 @@
 import sqlite3
 
-from btn import api_types
-from btn import user_db
+from btn_cache import api_types
+from btn_cache import user_db
 
 from . import lib
 

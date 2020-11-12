@@ -10,4 +10,4 @@ line-length = 79
 [tool.isort]
 profile = "google"
 single_line_exclusions = []
-src_paths = ["btn"]
+src_paths = ["btn_cache"]

@@ -6,7 +6,7 @@ import unittest.mock
 import requests
 import requests_mock
 
-from btn import ratelimit
+from btn_cache import ratelimit
 
 
 class APIRateLimiterTest(unittest.TestCase):

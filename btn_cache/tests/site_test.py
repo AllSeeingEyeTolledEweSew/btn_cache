@@ -2,7 +2,7 @@ import unittest
 
 import requests_mock
 
-from btn import site
+from btn_cache import site
 
 AUTH = site.UserAuth(
     user_id=123,

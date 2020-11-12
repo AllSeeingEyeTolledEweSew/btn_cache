@@ -84,7 +84,7 @@ class BaseTest(unittest.TestCase):
 
     def get_data(self, suffix: str) -> str:
         return importlib.resources.read_text(  # type: ignore
-            "btn.tests.data", f"{self.id()}.golden{suffix}"
+            "btn_cache.tests.data", f"{self.id()}.golden{suffix}"
         )
 
     def assert_golden(self, value: str, suffix: str = ".txt") -> None:

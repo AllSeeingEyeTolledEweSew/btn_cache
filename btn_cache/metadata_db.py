@@ -157,7 +157,7 @@ _MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
 @_MIGRATIONS.migrates(0, 1000000)
 def _migrate_1(conn: dbver.Connection, schema: str) -> None:
     sql = importlib.resources.read_text(  # type: ignore
-        "btn.sql", "metadata_1.0.0.sql"
+        "btn_cache.sql", "metadata_1.0.0.sql"
     )
     cur = conn.cursor()
     for line in sql.splitlines():

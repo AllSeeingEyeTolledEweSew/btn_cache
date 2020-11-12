@@ -45,8 +45,8 @@ repos:
   rev: v1.3.0
   hooks:
     - id: jinja2-render-template
-      files: btn/templates/metadata_1.0.0.sql
-      args: [btn/templates/metadata_1.0.0.sql, --output, btn/sql/metadata_1.0.0.sql]
+      files: btn_cache/templates/metadata_1.0.0.sql
+      args: [btn_cache/templates/metadata_1.0.0.sql, --output, btn_cache/sql/metadata_1.0.0.sql]
       always_run: false
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v3.3.0

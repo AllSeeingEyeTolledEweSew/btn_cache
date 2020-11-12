@@ -2,7 +2,7 @@ import sqlite3
 
 import better_bencode
 
-from btn import torrents_db
+from btn_cache import torrents_db
 
 from . import lib
 

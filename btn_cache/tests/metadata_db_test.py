@@ -12,8 +12,8 @@ from typing import TypeVar
 
 import better_bencode
 
-from btn import api_types
-from btn import metadata_db
+from btn_cache import api_types
+from btn_cache import metadata_db
 
 from . import lib
 
