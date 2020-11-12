@@ -12,7 +12,6 @@ from typing import Tuple
 from typing import Union
 import warnings
 
-import apsw
 import better_bencode
 
 from . import api_types
@@ -160,15 +159,17 @@ def _migrate_1(conn: dbver.Connection, schema: str) -> None:
     sql = importlib.resources.read_text(  # type: ignore
         "btn.sql", "metadata_1.0.0.sql"
     )
-    sql = sql.format(schema=schema)
-    conn.cursor().execute(sql)
+    cur = conn.cursor()
+    for line in sql.splitlines():
+        line = line.format(schema=schema)
+        cur.execute(line)
 
 
 get_version = _MIGRATIONS.get_format
 upgrade = _MIGRATIONS.upgrade
 
 
-def _update_series(conn: apsw.Connection, *rows: _SeriesRow) -> None:
+def _update_series(conn: dbver.Connection, *rows: _SeriesRow) -> None:
     if not rows:
         return
     cur = conn.cursor()
@@ -188,7 +189,7 @@ def _update_series(conn: apsw.Connection, *rows: _SeriesRow) -> None:
     cur.executemany(query, rows)
 
 
-def _update_groups(conn: apsw.Connection, *rows: _GroupRow) -> None:
+def _update_groups(conn: dbver.Connection, *rows: _GroupRow) -> None:
     if not rows:
         return
     cur = conn.cursor()
@@ -209,7 +210,7 @@ def _update_groups(conn: apsw.Connection, *rows: _GroupRow) -> None:
 
 
 def _update_torrent_entries(
-    conn: apsw.Connection, *rows: _TorrentEntryRow
+    conn: dbver.Connection, *rows: _TorrentEntryRow
 ) -> None:
     if not rows:
         return
@@ -237,7 +238,7 @@ class TorrentEntriesUpdate:
         self._group_rows = {row["id"]: row for row in group_rows}.values()
         self._te_rows = {row["id"]: row for row in te_rows}.values()
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         _update_series(conn, *self._series_rows)
         _update_groups(conn, *self._group_rows)
         _update_torrent_entries(conn, *self._te_rows)
@@ -255,7 +256,7 @@ class UnfilteredGetTorrentsResultUpdate(TorrentEntriesUpdate):
             self._te_rows, key=lambda row: (-row["time"], -row["id"])
         )
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         super().apply(conn)
         if not self._ordered_te_rows:
             return
@@ -342,7 +343,7 @@ class TorrentInfoUpdate:
                 )
             )
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         if not self._rows:
             return
         cols = self._rows[0].keys()
@@ -375,5 +376,5 @@ class TorrentFileUpdate:
             better_bencode.dumps(better_bencode.loads(torrent_file)[b"info"]),
         )
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         self._info_update.apply(conn)

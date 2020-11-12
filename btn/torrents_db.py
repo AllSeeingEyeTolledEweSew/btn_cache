@@ -2,7 +2,6 @@
 # accompanying UNLICENSE file.
 from typing import Union
 
-import apsw
 import better_bencode
 
 from . import dbver
@@ -31,7 +30,7 @@ class TorrentInfoUpdate:
         self._torrent_entry_id = torrent_entry_id
         self._info = info
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         conn.cursor().execute(
             "insert or ignore into info(id, info) values (?, ?)",
             (self._torrent_entry_id, self._info),
@@ -50,5 +49,5 @@ class TorrentFileUpdate:
             better_bencode.dumps(better_bencode.loads(torrent_file)[b"info"]),
         )
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         self._inner.apply(conn)

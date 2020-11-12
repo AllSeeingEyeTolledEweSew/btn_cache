@@ -1,4 +1,5 @@
-import apsw
+import sqlite3
+
 import better_bencode
 
 from btn import torrents_db
@@ -8,7 +9,7 @@ from . import lib
 
 class UpdateWholeTorrentInfoTest(lib.BaseTest):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = sqlite3.Connection(":memory:", isolation_level=None)
         torrents_db.upgrade(self.conn)
 
     def test_update(self) -> None:

@@ -1,4 +1,5 @@
 import contextlib
+import sqlite3
 from typing import cast
 from typing import Collection
 from typing import Iterator
@@ -8,8 +9,6 @@ from typing import Optional
 from typing import Tuple
 import unittest
 
-import apsw
-
 from btn import dbver
 
 
@@ -17,50 +16,54 @@ class DummyException(Exception):
     pass
 
 
+def _create_conn() -> sqlite3.Connection:
+    return sqlite3.Connection(":memory:", isolation_level=None)
+
+
 class NullPoolTest(unittest.TestCase):
     def test_close_normal(self) -> None:
-        singleton = apsw.Connection(":memory:")
+        singleton = _create_conn()
         pool = dbver.null_pool(lambda: singleton)
         with pool() as conn:
             conn.cursor().execute("create table x (x int primary key)")
         # Test the singleton was closed
-        with self.assertRaises(apsw.ConnectionClosedError):
+        with self.assertRaises(sqlite3.ProgrammingError):
             singleton.cursor()
 
     def test_close_fail(self) -> None:
-        singleton = apsw.Connection(":memory:")
+        singleton = sqlite3.Connection(":memory:")
         pool = dbver.null_pool(lambda: singleton)
         with self.assertRaises(DummyException):
             with pool():
                 raise DummyException()
         # Test the singleton was closed
-        with self.assertRaises(apsw.ConnectionClosedError):
+        with self.assertRaises(sqlite3.ProgrammingError):
             singleton.cursor()
 
 
 class BeginTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("create table x (x int primary key)")
 
     def do_success(self, lock_mode: dbver.LockMode) -> None:
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         with dbver.begin(self.conn, lock_mode):
-            self.assertEqual(self.conn.getautocommit(), False)
+            self.assertTrue(self.conn.in_transaction)
             self.conn.cursor().execute("insert into x (x) values (1)")
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         self.assertEqual(
             self.conn.cursor().execute("select * from x").fetchall(), [(1,)]
         )
 
     def do_fail(self, lock_mode: dbver.LockMode) -> None:
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         with self.assertRaises(DummyException):
             with dbver.begin(self.conn, lock_mode):
-                self.assertEqual(self.conn.getautocommit(), False)
+                self.assertTrue(self.conn.in_transaction)
                 self.conn.cursor().execute("insert into x (x) values (1)")
                 raise DummyException()
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         self.assertEqual(
             self.conn.cursor().execute("select * from x").fetchall(), []
         )
@@ -86,33 +89,33 @@ class BeginTest(unittest.TestCase):
 
 class BeginPoolTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("create table x (x int primary key)")
 
         @contextlib.contextmanager
-        def null_pool() -> Iterator[apsw.Connection]:
+        def null_pool() -> Iterator[sqlite3.Connection]:
             yield self.conn
 
         self.pool = null_pool
 
     def test_success(self) -> None:
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         with dbver.begin_pool(self.pool, dbver.LockMode.DEFERRED) as conn:
-            self.assertEqual(conn.getautocommit(), False)
+            self.assertTrue(self.conn.in_transaction)
             conn.cursor().execute("insert into x (x) values (1)")
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         self.assertEqual(
             self.conn.cursor().execute("select * from x").fetchall(), [(1,)]
         )
 
     def test_fail(self) -> None:
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         with self.assertRaises(DummyException):
             with dbver.begin_pool(self.pool, dbver.LockMode.DEFERRED) as conn:
-                self.assertEqual(conn.getautocommit(), False)
+                self.assertTrue(self.conn.in_transaction)
                 conn.cursor().execute("insert into x (x) values (1)")
                 raise DummyException()
-        self.assertEqual(self.conn.getautocommit(), True)
+        self.assertFalse(self.conn.in_transaction)
         self.assertEqual(
             self.conn.cursor().execute("select * from x").fetchall(), []
         )
@@ -151,7 +154,7 @@ class SemverBreakingTest(unittest.TestCase):
 
 class GetApplicationIdTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def test_get_zero(self) -> None:
@@ -173,7 +176,7 @@ class GetApplicationIdTest(unittest.TestCase):
 
 class SetApplicationIdTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def test_set(self) -> None:
@@ -210,7 +213,7 @@ class SetApplicationIdTest(unittest.TestCase):
 
 class GetUserVersionTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def test_get_zero(self) -> None:
@@ -228,7 +231,7 @@ class GetUserVersionTest(unittest.TestCase):
 
 class SetUserVersionTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def test_set(self) -> None:
@@ -265,7 +268,7 @@ class SetUserVersionTest(unittest.TestCase):
 
 class CheckApplicationIdTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def test_expected_empty(self) -> None:
@@ -383,7 +386,7 @@ class NamedFormatMigrationsTest(unittest.TestCase):
             cur.execute(f'insert into "{schema}".a select * from "{schema}".b')
             cur.execute(f'drop table "{schema}".b')
 
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def assert_migration_map(
@@ -513,7 +516,7 @@ class UserVersionMigrationsTest(unittest.TestCase):
             )
             cur.execute(f'drop table "{schema}".a')
 
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def test_unprovisioned(self) -> None:
@@ -594,7 +597,7 @@ class SemverMigrationsTest(unittest.TestCase):
             )
             cur.execute(f'drop table "{schema}".a')
 
-        self.conn = apsw.Connection(":memory:")
+        self.conn = _create_conn()
         self.conn.cursor().execute("attach ':memory:' as ?", ("other schema",))
 
     def test_unprovisioned(self) -> None:

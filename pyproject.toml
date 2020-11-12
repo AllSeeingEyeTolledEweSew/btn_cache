@@ -10,5 +10,4 @@ line-length = 79
 [tool.isort]
 profile = "google"
 single_line_exclusions = []
-known_third_party = ["apsw"]
 src_paths = ["btn"]

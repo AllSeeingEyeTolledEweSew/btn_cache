@@ -3,9 +3,68 @@ import io
 import os
 import pathlib
 import re
+import sqlite3
+from typing import Any
+from typing import cast
+from typing import Iterator
+from typing import TextIO
+from typing import Tuple
 import unittest
 
-import apsw
+
+def dump_value(out: TextIO, value: Any) -> None:
+    if value is None:
+        out.write("NULL")
+    elif isinstance(value, (int, float)):
+        out.write(str(value))
+    elif isinstance(value, bytes):
+        out.write("X'")
+        for byte in value:
+            out.write(format(byte, "02X"))
+        out.write("'")
+    elif isinstance(value, str):
+        out.write("'")
+        value = re.sub(r"'", "''", value)
+        value = re.sub("\0", "'||X'00'||'", value)
+        out.write(value)
+        out.write("'")
+    else:
+        raise TypeError(f"unsupported value: {value}")
+
+
+def dump_conn(
+    out: TextIO, conn: sqlite3.Connection, include_schema=False
+) -> None:
+    schema_cur = conn.cursor()
+    schema_cur.execute(
+        "select name, sql from sqlite_master where type = 'table'"
+    )
+    for name, sql in cast(Iterator[Tuple[str, str]], schema_cur):
+        # Write CREATE TABLE first
+        if include_schema:
+            out.write(sql)
+            out.write(";\n")
+        # Write INSERTs
+        cur = conn.cursor()
+        cur.execute(f"select * from {name}")
+        for row in cur:
+            out.write("INSERT INTO ")
+            out.write(name)
+            out.write(" VALUES (")
+            for i, col in enumerate(row):
+                if i != 0:
+                    out.write(", ")
+                dump_value(out, col)
+            out.write(");\n")
+        # Write indexes and triggers
+        if include_schema:
+            cur.execute(
+                "select sql from sqlite_master where tbl_name = ? "
+                "and type in ('index', 'trigger')"
+            )
+            for (sql,) in cast(Iterator[Tuple[str]], cur):
+                out.write(sql)
+                out.write(";\n")
 
 
 class BaseTest(unittest.TestCase):
@@ -37,21 +96,10 @@ class BaseTest(unittest.TestCase):
 
     def assert_golden_db(
         self,
-        conn: apsw.Connection,
-        suffix: str = ".sql",
+        conn: sqlite3.Connection,
         include_schema: bool = False,
+        suffix: str = ".sql",
     ) -> None:
-        output_file = io.StringIO()
-        shell = apsw.Shell(db=conn, stdout=output_file)
-        shell.process_command(".dump")
-        output = output_file.getvalue()
-        # Remove comments, which include unstable data like timestamps,
-        # usernames and hostnames.
-        output = re.sub(r"-- (.*?)\n", "", output)
-        if not include_schema:
-            output = "\n".join(
-                line
-                for line in output.split("\n")
-                if line.startswith("INSERT ")
-            )
-        self.assert_golden(output, suffix=suffix)
+        writer = io.StringIO()
+        dump_conn(writer, conn, include_schema=include_schema)
+        self.assert_golden(writer.getvalue(), suffix=suffix)

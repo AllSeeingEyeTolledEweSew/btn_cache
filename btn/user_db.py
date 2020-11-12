@@ -8,8 +8,6 @@ from typing import Any
 from typing import Dict
 import warnings
 
-import apsw
-
 from . import api_types
 from . import dbver
 
@@ -85,7 +83,7 @@ class SnatchEntriesUpdate:
         else:
             self._query = ""
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         if not self._rows:
             return
         conn.cursor().executemany(self._query, self._rows)
@@ -95,5 +93,5 @@ class GetSnatchlistResultUpdate:
     def __init__(self, result: api_types.GetUserSnatchlistResult) -> None:
         self._inner = SnatchEntriesUpdate(*result["torrents"].values())
 
-    def apply(self, conn: apsw.Connection) -> None:
+    def apply(self, conn: dbver.Connection) -> None:
         self._inner.apply(conn)

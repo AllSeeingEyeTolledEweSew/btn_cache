@@ -1,3 +1,4 @@
+import sqlite3
 from typing import Any
 from typing import cast
 from typing import Dict
@@ -9,7 +10,6 @@ from typing import Tuple
 from typing import Type
 from typing import TypeVar
 
-import apsw
 import better_bencode
 
 from btn import api_types
@@ -19,7 +19,7 @@ from . import lib
 
 
 class TableState:
-    def __init__(self, conn: apsw.Connection, table: str) -> None:
+    def __init__(self, conn: sqlite3.Connection, table: str) -> None:
         cur = conn.cursor()
         self.updated_at = dict(
             cast(
@@ -112,7 +112,7 @@ def assert_equal(got: _S, expected: _S, table: str, fact: str):
 
 
 class ChangeChecker:
-    def __init__(self, conn: apsw.Connection) -> None:
+    def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
         self.expected_series_delta = TableStateDelta()
@@ -178,7 +178,7 @@ class ChangeChecker:
 
 class BaseMetadataTest(lib.BaseTest):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = sqlite3.Connection(":memory:", isolation_level=None)
         metadata_db.upgrade(self.conn)
 
         self.series_id = 345
@@ -404,18 +404,18 @@ class UpdateTorrentEntryTest(BaseMetadataTest):
         self.update_entry(self.entry)
         cur = self.conn.cursor()
         with self.assert_changes():
-            with self.assertRaises(apsw.ConstraintError):
+            with self.assertRaises(sqlite3.IntegrityError):
                 cur.execute("delete from series")
-            with self.assertRaises(apsw.ConstraintError):
+            with self.assertRaises(sqlite3.IntegrityError):
                 cur.execute("delete from torrent_entry_group")
-            with self.assertRaises(apsw.ConstraintError):
+            with self.assertRaises(sqlite3.IntegrityError):
                 cur.execute("delete from torrent_entry")
 
-            with self.assertRaises(apsw.ConstraintError):
+            with self.assertRaises(sqlite3.IntegrityError):
                 cur.execute("update series set id = -1")
-            with self.assertRaises(apsw.ConstraintError):
+            with self.assertRaises(sqlite3.IntegrityError):
                 cur.execute("update torrent_entry_group set id = -1")
-            with self.assertRaises(apsw.ConstraintError):
+            with self.assertRaises(sqlite3.IntegrityError):
                 cur.execute("update torrent_entry set id = -1")
 
     def test_empty_values(self) -> None:

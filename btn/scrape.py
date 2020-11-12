@@ -6,6 +6,7 @@
 import abc
 import contextlib
 import logging
+import sqlite3
 import threading
 import time
 from typing import Iterator
@@ -13,7 +14,6 @@ from typing import List
 from typing import Tuple
 import urllib.parse
 
-import apsw
 import feedparser
 import requests
 
@@ -111,8 +111,10 @@ class _Pool(_Base):
     def _step_wrap(self) -> float:
         try:
             return super()._step_wrap()
-        except apsw.BusyError as exc:
-            raise NonFatal() from exc
+        except sqlite3.OperationalError as exc:
+            if str(exc) == "database is locked":
+                raise NonFatal() from exc
+            raise
 
 
 class _UserAccess(_Base):
@@ -145,7 +147,7 @@ _TORRENTS_VERSION_SUPPORTED = 1000000
 
 
 @contextlib.contextmanager
-def _meta_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
+def _meta_write(pool: dbver.Pool) -> Iterator[Tuple[sqlite3.Connection, int]]:
     with dbver.begin_pool(pool, dbver.LockMode.IMMEDIATE) as conn:
         version = metadata_db.upgrade(conn)
         dbver.semver_check_breaking(version, _META_VERSION_SUPPORTED)
@@ -153,7 +155,7 @@ def _meta_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
 
 
 @contextlib.contextmanager
-def _meta_read(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
+def _meta_read(pool: dbver.Pool) -> Iterator[Tuple[sqlite3.Connection, int]]:
     with dbver.begin_pool(pool, dbver.LockMode.DEFERRED) as conn:
         version = metadata_db.get_version(conn)
         dbver.semver_check_breaking(version, _META_VERSION_SUPPORTED)
@@ -161,7 +163,7 @@ def _meta_read(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
 
 
 @contextlib.contextmanager
-def _user_write(pool: dbver.Pool) -> Iterator[Tuple[apsw.Connection, int]]:
+def _user_write(pool: dbver.Pool) -> Iterator[Tuple[sqlite3.Connection, int]]:
     with dbver.begin_pool(pool, dbver.LockMode.IMMEDIATE) as conn:
         version = user_db.upgrade(conn)
         dbver.semver_check_breaking(version, _USER_VERSION_SUPPORTED)

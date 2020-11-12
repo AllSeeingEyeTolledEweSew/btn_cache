@@ -1,6 +1,7 @@
 import abc
 import contextlib
 import importlib.resources
+import sqlite3
 import threading
 import time
 from typing import Any
@@ -12,7 +13,6 @@ from typing import TypeVar
 import unittest
 import unittest.mock
 
-import apsw
 import requests
 import requests_mock
 import requests_mock.adapter
@@ -173,7 +173,9 @@ TEST_AUTH = site.UserAuth(
 class MetadataScraperTest(APIErrorsBase):
     def setUp(self) -> None:
         super().setUp()
-        self.metadata_conn = apsw.Connection(":memory:")
+        self.metadata_conn = sqlite3.Connection(
+            ":memory:", isolation_level=None
+        )
         self.metadata_pool = lambda: nullcontext(self.metadata_conn)
 
         self.scraper = scrape.MetadataScraper(
@@ -238,7 +240,9 @@ class MetadataScraperTest(APIErrorsBase):
 class MetadataTipScraperTest(APIErrorsBase):
     def setUp(self) -> None:
         super().setUp()
-        self.metadata_conn = apsw.Connection(":memory:")
+        self.metadata_conn = sqlite3.Connection(
+            ":memory:", isolation_level=None
+        )
         self.metadata_pool = lambda: nullcontext(self.metadata_conn)
 
         self.scraper = scrape.MetadataTipScraper(
@@ -310,7 +314,9 @@ class MetadataTipScraperTest(APIErrorsBase):
 class MetadataTipScraperSiteErrorTest(APITestBase, UserAccessErrorsBase):
     def setUp(self) -> None:
         super().setUp()
-        self.metadata_conn = apsw.Connection(":memory:")
+        self.metadata_conn = sqlite3.Connection(
+            ":memory:", isolation_level=None
+        )
         self.metadata_pool = lambda: nullcontext(self.metadata_conn)
 
         self.scraper = scrape.MetadataTipScraper(
@@ -346,7 +352,7 @@ TEST_SNATCH = api_types.SnatchEntry(
 class SnatchlistScraperTest(APIErrorsBase):
     def setUp(self) -> None:
         super().setUp()
-        self.user_conn = apsw.Connection(":memory:")
+        self.user_conn = sqlite3.Connection(":memory:", isolation_level=None)
         self.user_pool = lambda: nullcontext(self.user_conn)
 
         self.scraper = scrape.SnatchlistScraper(

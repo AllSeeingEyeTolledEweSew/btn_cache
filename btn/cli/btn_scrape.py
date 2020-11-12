@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import signal
+import sqlite3
 import sys
 import threading
 from typing import Any
@@ -14,7 +15,6 @@ from typing import Dict
 from typing import List
 from typing import Set
 
-import apsw
 import requests
 
 from btn import api as api_lib
@@ -113,10 +113,10 @@ def main() -> None:
         auth.api_key, rate_limiter=api_rate_limiter, session=session
     )
 
-    def metadata_factory() -> apsw.Connection:
-        conn = apsw.Connection(args.metadata_db)
-        conn.setbusytimeout(5000)
+    def metadata_factory() -> sqlite3.Connection:
+        conn = sqlite3.Connection(args.metadata_db, isolation_level=None)
         cur = conn.cursor()
+        cur.execute("pragma busy_timeout = 5000")
         # Metadata updates use temp tables with small data sizes
         cur.execute("pragma temp_store = MEMORY")
         cur.execute("pragma trusted_schema = OFF")
@@ -125,10 +125,10 @@ def main() -> None:
 
     metadata_pool = dbver.null_pool(metadata_factory)
 
-    def user_factory() -> apsw.Connection:
-        conn = apsw.Connection(args.user_db)
-        conn.setbusytimeout(5000)
+    def user_factory() -> sqlite3.Connection:
+        conn = sqlite3.Connection(args.user_db, isolation_level=None)
         cur = conn.cursor()
+        cur.execute("pragma busy_timeout = 5000")
         cur.execute("pragma trusted_schema = OFF")
         cur.execute("pragma journal_mode = WAL")
         return conn

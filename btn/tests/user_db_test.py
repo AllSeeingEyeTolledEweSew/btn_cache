@@ -1,4 +1,4 @@
-import apsw
+import sqlite3
 
 from btn import api_types
 from btn import user_db
@@ -8,7 +8,7 @@ from . import lib
 
 class UpdateSnatchEntriesTest(lib.BaseTest):
     def setUp(self) -> None:
-        self.conn = apsw.Connection(":memory:")
+        self.conn = sqlite3.Connection(":memory:", isolation_level=None)
         user_db.upgrade(self.conn)
 
         self.entry = api_types.SnatchEntry(
