@@ -13,9 +13,9 @@ from typing import Union
 import warnings
 
 import better_bencode
+import dbver
 
 from . import api_types
-from . import dbver
 
 if sys.version_info >= (3, 8):
 

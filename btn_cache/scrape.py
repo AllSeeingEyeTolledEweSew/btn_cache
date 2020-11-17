@@ -14,12 +14,12 @@ from typing import List
 from typing import Tuple
 import urllib.parse
 
+import dbver
 import feedparser
 import requests
 
 from . import api as api_lib
 from . import daemon
-from . import dbver
 from . import metadata_db
 from . import ratelimit
 from . import site

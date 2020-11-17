@@ -8,8 +8,9 @@ from typing import Any
 from typing import Dict
 import warnings
 
+import dbver
+
 from . import api_types
-from . import dbver
 
 if sys.version_info >= (3, 8):
 

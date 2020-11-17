@@ -15,11 +15,11 @@ from typing import Dict
 from typing import List
 from typing import Set
 
+import dbver
 import requests
 
 from btn_cache import api as api_lib
 from btn_cache import daemon as daemon_lib
-from btn_cache import dbver
 from btn_cache import ratelimit
 from btn_cache import scrape
 from btn_cache import site

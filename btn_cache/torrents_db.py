@@ -3,8 +3,7 @@
 from typing import Union
 
 import better_bencode
-
-from . import dbver
+import dbver
 
 _MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
     application_id=257675987
