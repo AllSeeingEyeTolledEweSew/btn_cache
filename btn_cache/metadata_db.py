@@ -1,6 +1,5 @@
 # The author disclaims copyright to this source code. Please see the
 # accompanying UNLICENSE file.
-import importlib.resources
 from typing import Any
 from typing import cast
 from typing import Dict
@@ -12,6 +11,7 @@ import warnings
 
 import better_bencode
 import dbver
+import importlib_resources
 from typing_extensions import TypedDict
 
 from . import api_types
@@ -132,9 +132,7 @@ _MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
 
 @_MIGRATIONS.migrates(0, 1000000)
 def _migrate_1(conn: dbver.Connection, schema: str) -> None:
-    sql = importlib.resources.read_text(  # type: ignore
-        "btn_cache.sql", "metadata_1.0.0.sql"
-    )
+    sql = importlib_resources.read_text("btn_cache.sql", "metadata_1.0.0.sql")
     cur = conn.cursor()
     for line in sql.splitlines():
         line = line.format(schema=schema)

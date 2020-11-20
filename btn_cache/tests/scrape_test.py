@@ -1,6 +1,5 @@
 import abc
 import contextlib
-import importlib.resources
 import sqlite3
 import threading
 import time
@@ -13,6 +12,7 @@ from typing import TypeVar
 import unittest
 import unittest.mock
 
+import importlib_resources
 import requests
 import requests_mock
 import requests_mock.adapter
@@ -252,7 +252,7 @@ class MetadataTipScraperTest(APIErrorsBase):
         )
 
         # Set up mock response for feed
-        feed_content = importlib.resources.read_binary(  # type: ignore
+        feed_content = importlib_resources.read_binary(
             "btn_cache.tests", "test_feed.xml"
         )
         # Don't need full query string for match

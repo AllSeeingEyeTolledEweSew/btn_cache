@@ -1,4 +1,3 @@
-import importlib.resources
 import io
 import os
 import pathlib
@@ -10,6 +9,8 @@ from typing import Iterator
 from typing import TextIO
 from typing import Tuple
 import unittest
+
+import importlib_resources
 
 
 def dump_value(out: TextIO, value: Any) -> None:
@@ -83,7 +84,7 @@ class BaseTest(unittest.TestCase):
         )
 
     def get_data(self, suffix: str) -> str:
-        return importlib.resources.read_text(  # type: ignore
+        return importlib_resources.read_text(
             "btn_cache.tests.data", f"{self.id()}.golden{suffix}"
         )
 

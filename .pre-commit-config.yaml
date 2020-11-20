@@ -22,21 +22,25 @@ repos:
       args: [--python-version, "3.6"]
       additional_dependencies:
         - dbver>=0.4
+        - importlib_resources>=3.3.0
     - id: mypy
       name: mypy37
-      args: [--python-version, "3.7", --no-warn-unused-ignores]
+      args: [--python-version, "3.7"]
       additional_dependencies:
         - dbver>=0.4
+        - importlib_resources>=3.3.0
     - id: mypy
       name: mypy38
-      args: [--python-version, "3.8", --no-warn-unused-ignores]
+      args: [--python-version, "3.8"]
       additional_dependencies:
         - dbver>=0.4
+        - importlib_resources>=3.3.0
     - id: mypy
       name: mypy39
-      args: [--python-version, "3.9", --no-warn-unused-ignores]
+      args: [--python-version, "3.9"]
       additional_dependencies:
         - dbver>=0.4
+        - importlib_resources>=3.3.0
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.8.4
   hooks:
