@@ -11,6 +11,10 @@ repos:
   rev: v1.15.1
   hooks:
     - id: setup-cfg-fmt
+- repo: https://github.com/motet-a/jinjalint
+  rev: master
+  hooks:
+    - id: jinjalint
 - repo: https://github.com/PyCQA/isort
   rev: 5.6.4
   hooks:
@@ -110,8 +114,8 @@ repos:
   rev: v1.3.0
   hooks:
     - id: jinja2-render-template
-      files: btn_cache/templates/metadata_1.0.0.sql
-      args: [btn_cache/templates/metadata_1.0.0.sql, --output, btn_cache/sql/metadata_1.0.0.sql]
+      files: btn_cache/templates/metadata_1.0.0.jinja2
+      args: [btn_cache/templates/metadata_1.0.0.jinja2, --output, btn_cache/sql/metadata_1.0.0.sql]
       always_run: false
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v3.3.0
