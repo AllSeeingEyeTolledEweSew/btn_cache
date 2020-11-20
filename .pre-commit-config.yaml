@@ -19,22 +19,22 @@ repos:
   hooks:
     - id: mypy
       name: mypy36
-      args: [--python-version, "3.6", --no-warn-unused-ignores, --no-warn-redundant-casts]
+      args: [--python-version, "3.6"]
       additional_dependencies:
         - dbver>=0.4
     - id: mypy
       name: mypy37
-      args: [--python-version, "3.7", --no-warn-unused-ignores, --no-warn-redundant-casts]
+      args: [--python-version, "3.7", --no-warn-unused-ignores]
       additional_dependencies:
         - dbver>=0.4
     - id: mypy
       name: mypy38
-      args: [--python-version, "3.8", --no-warn-unused-ignores, --no-warn-redundant-casts]
+      args: [--python-version, "3.8", --no-warn-unused-ignores]
       additional_dependencies:
         - dbver>=0.4
     - id: mypy
       name: mypy39
-      args: [--python-version, "3.9", --no-warn-unused-ignores, --no-warn-redundant-casts]
+      args: [--python-version, "3.9", --no-warn-unused-ignores]
       additional_dependencies:
         - dbver>=0.4
 - repo: https://gitlab.com/pycqa/flake8.git

@@ -365,9 +365,7 @@ class SnatchlistScraperTest(APIErrorsBase):
         for i in range(6, 11):
             snatch = TEST_SNATCH.copy()
             snatch["TorrentID"] = str(i)
-            cast(Dict[str, api_types.SnatchEntry], self.result1["torrents"])[
-                str(i)
-            ] = snatch
+            self.result1["torrents"][str(i)] = snatch
         self.mock1 = self.mock_api_request(
             "getUserSnatchlist", [self.key, 10000, 0], self.result1
         )
@@ -378,9 +376,7 @@ class SnatchlistScraperTest(APIErrorsBase):
         for i in range(1, 6):
             snatch = TEST_SNATCH.copy()
             snatch["TorrentID"] = str(i)
-            cast(Dict[str, api_types.SnatchEntry], self.result2["torrents"])[
-                str(i)
-            ] = snatch
+            self.result2["torrents"][str(i)] = snatch
         self.mock2 = self.mock_api_request(
             "getUserSnatchlist", [self.key, 10000, 5], self.result2
         )
