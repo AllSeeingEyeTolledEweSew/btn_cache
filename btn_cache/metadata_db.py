@@ -1,8 +1,6 @@
 # The author disclaims copyright to this source code. Please see the
 # accompanying UNLICENSE file.
 import importlib.resources
-import sys
-import typing
 from typing import Any
 from typing import cast
 from typing import Dict
@@ -14,78 +12,56 @@ import warnings
 
 import better_bencode
 import dbver
+from typing_extensions import TypedDict
 
 from . import api_types
 
-if sys.version_info >= (3, 8):
 
-    class _SeriesRow(typing.TypedDict):
-        id: int
-        imdb_id: Optional[str]
-        name: Optional[str]
-        banner: Optional[str]
-        poster: Optional[str]
-        tvdb_id: Optional[int]
-        tvrage_id: Optional[int]
-        youtube_trailer: Optional[str]
-        deleted: bool
-
-
-else:
-    _SeriesRow = Dict[str, Any]
+class _SeriesRow(TypedDict):
+    id: int
+    imdb_id: Optional[str]
+    name: Optional[str]
+    banner: Optional[str]
+    poster: Optional[str]
+    tvdb_id: Optional[int]
+    tvrage_id: Optional[int]
+    youtube_trailer: Optional[str]
+    deleted: bool
 
 
-if sys.version_info >= (3, 8):
-
-    class _GroupRow(typing.TypedDict):
-        id: int
-        category: str
-        name: Optional[str]
-        series_id: int
-        deleted: bool
+class _GroupRow(TypedDict):
+    id: int
+    category: str
+    name: Optional[str]
+    series_id: int
+    deleted: bool
 
 
-else:
-    _GroupRow = Dict[str, Any]
+class _TorrentEntryRow(TypedDict):
+    id: int
+    codec: Optional[str]
+    container: Optional[str]
+    group_id: int
+    info_hash: str
+    origin: Optional[str]
+    release_name: Optional[str]
+    resolution: Optional[str]
+    size: int
+    source: Optional[str]
+    time: int
+    snatched: int
+    seeders: int
+    leechers: int
+    deleted: bool
 
 
-if sys.version_info >= (3, 8):
-
-    class _TorrentEntryRow(typing.TypedDict):
-        id: int
-        codec: Optional[str]
-        container: Optional[str]
-        group_id: int
-        info_hash: str
-        origin: Optional[str]
-        release_name: Optional[str]
-        resolution: Optional[str]
-        size: int
-        source: Optional[str]
-        time: int
-        snatched: int
-        seeders: int
-        leechers: int
-        deleted: bool
-
-
-else:
-    _TorrentEntryRow = Dict[str, Any]
-
-
-if sys.version_info >= (3, 8):
-
-    class _FileInfoRow(typing.TypedDict):
-        id: int
-        file_index: int
-        path: bytes
-        encoding: Optional[str]
-        start: int
-        stop: int
-
-
-else:
-    _FileInfoRow = Dict[str, Any]
+class _FileInfoRow(TypedDict):
+    id: int
+    file_index: int
+    path: bytes
+    encoding: Optional[str]
+    start: int
+    stop: int
 
 
 _Rows = Tuple[_SeriesRow, _GroupRow, _TorrentEntryRow]

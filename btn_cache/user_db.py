@@ -1,30 +1,22 @@
 # The author disclaims copyright to this source code. Please see the
 # accompanying UNLICENSE file.
 import calendar
-import sys
 import time
-import typing
-from typing import Any
-from typing import Dict
 import warnings
 
 import dbver
+from typing_extensions import TypedDict
 
 from . import api_types
 
-if sys.version_info >= (3, 8):
 
-    class _SnatchEntryRow(typing.TypedDict):
-        id: int
-        downloaded: int
-        uploaded: int
-        seed_time: int
-        seeding: int
-        snatch_time: int
-
-
-else:
-    _SnatchEntryRow = Dict[str, Any]
+class _SnatchEntryRow(TypedDict):
+    id: int
+    downloaded: int
+    uploaded: int
+    seed_time: int
+    seeding: int
+    snatch_time: int
 
 
 def _snatch_entry_json_to_row(entry: api_types.SnatchEntry) -> _SnatchEntryRow:
