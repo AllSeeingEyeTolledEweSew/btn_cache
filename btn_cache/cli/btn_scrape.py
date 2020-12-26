@@ -13,9 +13,9 @@
 
 import argparse
 import concurrent.futures
-import json
 import logging
 import os
+import pathlib
 import signal
 import sqlite3
 import sys
@@ -33,6 +33,7 @@ from btn_cache import daemon as daemon_lib
 from btn_cache import ratelimit
 from btn_cache import scrape
 from btn_cache import site
+from btn_cache import storage as storage_lib
 
 _LOG = logging.getLogger(__name__)
 
@@ -69,11 +70,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--verbose", "-v", action="count")
-    parser.add_argument(
-        "--auth_file", type=argparse.FileType("r"), required=True
-    )
-    parser.add_argument("--metadata_db", required=True)
-    parser.add_argument("--user_db", required=True)
+    parser.add_argument("--path", type=pathlib.Path, required=True)
     parser.add_argument(
         "--disable",
         action="append",
@@ -103,6 +100,8 @@ def main() -> None:
         "%(filename)s:%(lineno)d %(message)s",
     )
 
+    storage = storage_lib.Storage(args.path)
+
     session = requests.Session()
 
     rate_limiter = ratelimit.RateLimiter(
@@ -112,7 +111,7 @@ def main() -> None:
         max_calls=args.api_max_calls, period=args.api_period
     )
 
-    auth = site.UserAuth(**json.load(args.auth_file))
+    auth = storage.get_user_auth()
 
     user_access = site.UserAccess(
         auth=auth, session=session, rate_limiter=rate_limiter
@@ -124,7 +123,9 @@ def main() -> None:
     )
 
     def metadata_factory() -> sqlite3.Connection:
-        conn = sqlite3.Connection(args.metadata_db, isolation_level=None)
+        conn = sqlite3.Connection(
+            storage.metadata_db_path, isolation_level=None
+        )
         cur = conn.cursor()
         cur.execute("pragma busy_timeout = 5000")
         # Metadata updates use temp tables with small data sizes
@@ -136,7 +137,7 @@ def main() -> None:
     metadata_pool = dbver.null_pool(metadata_factory)
 
     def user_factory() -> sqlite3.Connection:
-        conn = sqlite3.Connection(args.user_db, isolation_level=None)
+        conn = sqlite3.Connection(storage.user_db_path, isolation_level=None)
         cur = conn.cursor()
         cur.execute("pragma busy_timeout = 5000")
         cur.execute("pragma trusted_schema = OFF")
