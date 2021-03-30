@@ -272,13 +272,12 @@ class UnfilteredGetTorrentsResultUpdate(TorrentEntriesUpdate):
             cur.execute("drop table temp.ids")
 
 
-class TorrentInfoUpdate:
+class ParsedTorrentInfoUpdate:
     def __init__(
-        self, torrent_entry_id: int, info: Union[bytes, memoryview, bytearray]
+        self, info_dict: Dict[bytes, Any], torrent_entry_id: int = 0
     ) -> None:
-        # TODO: optimize
-        info_dict = cast(Dict[bytes, Any], better_bencode.loads(info))
         self._rows: List[_FileInfoRow] = []
+        self._torrent_entry_id = torrent_entry_id
         encoding: Optional[str]
         if b"files" in info_dict:
             offset = 0
@@ -328,9 +327,13 @@ class TorrentInfoUpdate:
                 )
             )
 
-    def apply(self, conn: dbver.Connection) -> None:
+    def apply(self, conn: dbver.Connection, torrent_entry_id: int = 0) -> None:
         if not self._rows:
             return
+        assert (torrent_entry_id > 0) ^ (self._torrent_entry_id > 0)
+        if torrent_entry_id > 0:
+            for row in self._rows:
+                row["id"] = torrent_entry_id
         cols = self._rows[0].keys()
         query = "".join(
             (
@@ -347,6 +350,19 @@ class TorrentInfoUpdate:
             )
         )
         conn.cursor().executemany(query, self._rows)
+
+
+class TorrentInfoUpdate:
+    def __init__(
+        self, torrent_entry_id: int, info: Union[bytes, memoryview, bytearray]
+    ) -> None:
+        # TODO: optimize
+        self._inner = ParsedTorrentInfoUpdate(
+            better_bencode.loads(info), torrent_entry_id=torrent_entry_id
+        )
+
+    def apply(self, conn: dbver.Connection) -> None:
+        self._inner.apply(conn)
 
 
 class TorrentFileUpdate:
