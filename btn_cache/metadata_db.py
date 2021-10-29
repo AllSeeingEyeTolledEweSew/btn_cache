@@ -127,10 +127,15 @@ def _te_json_to_rows(entry: api_types.TorrentEntry) -> _Rows:
     return series_row, group_row, torrent_entry_row
 
 
-_RowArray = Tuple[Tuple[_SeriesRow], Tuple[_GroupRow], Tuple[_TorrentEntryRow]]
+_RowArray = Tuple[
+    Tuple[_SeriesRow, ...], Tuple[_GroupRow, ...], Tuple[_TorrentEntryRow, ...]
+]
 
 
 def _te_json_to_row_array(*entries: api_types.TorrentEntry) -> _RowArray:
+    # TODO: make this more elegant
+    if not entries:
+        return ((), (), ())
     row_tuples = [_te_json_to_rows(entry) for entry in entries]
     # typeshed can't currently deal with this
     return cast(_RowArray, tuple(zip(*row_tuples)))
