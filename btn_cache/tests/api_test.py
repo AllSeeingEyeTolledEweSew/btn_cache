@@ -69,16 +69,12 @@ class APICallTestBase(unittest.TestCase, abc.ABC):
             self.call()
 
     def test_connection_error(self, mock: requests_mock.Mocker) -> None:
-        mock.post(
-            "https://api.broadcasthe.net/", exc=requests.ConnectionError()
-        )
+        mock.post("https://api.broadcasthe.net/", exc=requests.ConnectionError())
         with self.assertRaises(requests.ConnectionError):
             self.call()
 
     def test_invalid_key(self, mock: requests_mock.Mocker) -> None:
-        mock_api_error(
-            mock, "Invalid API Key", api_types.ErrorCode.INVALID_API_KEY
-        )
+        mock_api_error(mock, "Invalid API Key", api_types.ErrorCode.INVALID_API_KEY)
         with self.assertRaises(api_lib.InvalidAPIKeyError):
             self.call()
 
@@ -105,9 +101,7 @@ class GetTorrentsTest(APICallTestBase, unittest.TestCase):
 
     def test_limit_offset(self, mock: requests_mock.Mocker) -> None:
         result = api_types.GetTorrentsResult(results="123", torrents={})
-        mock_request(
-            mock, "getTorrents", [self.key, {}, 100, 50], result=result
-        )
+        mock_request(mock, "getTorrents", [self.key, {}, 100, 50], result=result)
 
         self.assertEqual(self.api.getTorrents(results=100, offset=50), result)
 
@@ -130,21 +124,15 @@ class GetUserSnatchlistTest(APICallTestBase, unittest.TestCase):
 
     def test_call(self, mock: requests_mock.Mocker) -> None:
         result = api_types.GetUserSnatchlistResult(results="123", torrents={})
-        mock_request(
-            mock, "getUserSnatchlist", [self.key, 10, 0], result=result
-        )
+        mock_request(mock, "getUserSnatchlist", [self.key, 10, 0], result=result)
 
         self.assertEqual(self.api.getUserSnatchlist(), result)
 
     def test_limit_offset(self, mock: requests_mock.Mocker) -> None:
         result = api_types.GetUserSnatchlistResult(results="123", torrents={})
-        mock_request(
-            mock, "getUserSnatchlist", [self.key, 100, 50], result=result
-        )
+        mock_request(mock, "getUserSnatchlist", [self.key, 100, 50], result=result)
 
-        self.assertEqual(
-            self.api.getUserSnatchlist(results=100, offset=50), result
-        )
+        self.assertEqual(self.api.getUserSnatchlist(results=100, offset=50), result)
 
 
 class RateLimitedAPITest(unittest.TestCase):
@@ -166,9 +154,7 @@ class RateLimitedAPITest(unittest.TestCase):
             "post", "https://api.broadcasthe.net/", json=self.dummy_response
         )
         rate_limiter = ratelimit.APIRateLimiter(blocking=False)
-        api = api_lib.RateLimitedAPI(
-            "dummy_key", rate_limiter, session=self.session
-        )
+        api = api_lib.RateLimitedAPI("dummy_key", rate_limiter, session=self.session)
 
         # Shouldn't block for first N calls
         for _ in range(150):
@@ -190,9 +176,7 @@ class RateLimitedAPITest(unittest.TestCase):
             "post", "https://api.broadcasthe.net/", json=error_response
         )
         rate_limiter = ratelimit.APIRateLimiter(blocking=False)
-        api = api_lib.RateLimitedAPI(
-            "dummy_key", rate_limiter, session=self.session
-        )
+        api = api_lib.RateLimitedAPI("dummy_key", rate_limiter, session=self.session)
 
         with self.assertRaises(api_lib.CallLimitExceededError):
             api.getTorrents()

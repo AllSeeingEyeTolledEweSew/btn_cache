@@ -56,11 +56,7 @@ def _mk_api_error(message: str, code: api_types.ErrorCode) -> APIError:
 
 class API:
     def __init__(
-        self,
-        key: str,
-        *,
-        session: requests.Session = None,
-        timeout: float = 60
+        self, key: str, *, session: requests.Session = None, timeout: float = 60
     ) -> None:
         self.key = key
         if session is None:
@@ -70,9 +66,7 @@ class API:
 
     def call(self, method: str, *params: Any) -> Any:
         params = (self.key,) + params
-        request = api_types.Request(
-            jsonrpc="2.0", id=1, method=method, params=params
-        )
+        request = api_types.Request(jsonrpc="2.0", id=1, method=method, params=params)
         headers = {"Content-Type": "application/json"}
 
         response = self._session.post(
@@ -134,9 +128,7 @@ class RateLimitedAPI(API):
         if rate_limiter is None:
             rate_limiter = ratelimit.APIRateLimiter()
         self._rate_limiter = rate_limiter
-        ratelimit.ratelimit_session(
-            self._session, _ENDPOINT, self._rate_limiter
-        )
+        ratelimit.ratelimit_session(self._session, _ENDPOINT, self._rate_limiter)
 
     def call(self, method: str, *params: Any) -> Any:
         try:

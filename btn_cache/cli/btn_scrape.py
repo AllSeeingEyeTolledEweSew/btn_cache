@@ -113,9 +113,7 @@ def main() -> None:
 
     auth = storage.get_user_auth()
 
-    user_access = site.UserAccess(
-        auth=auth, session=session, rate_limiter=rate_limiter
-    )
+    user_access = site.UserAccess(auth=auth, session=session, rate_limiter=rate_limiter)
     if auth.api_key is None:
         raise ValueError("api_key is required")
     api = api_lib.RateLimitedAPI(
@@ -123,9 +121,7 @@ def main() -> None:
     )
 
     def metadata_factory() -> sqlite3.Connection:
-        conn = sqlite3.Connection(
-            storage.metadata_db_path, isolation_level=None
-        )
+        conn = sqlite3.Connection(storage.metadata_db_path, isolation_level=None)
         cur = conn.cursor()
         cur.execute("pragma busy_timeout = 5000")
         # Metadata updates use temp tables with small data sizes
@@ -180,15 +176,11 @@ def main() -> None:
 
         futures: List[concurrent.futures.Future] = []
         for name, daemon in daemons.items():
-            executor = concurrent.futures.ThreadPoolExecutor(
-                thread_name_prefix=name
-            )
+            executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix=name)
             futures.append(executor.submit(daemon.run))
 
         # Wait for any daemon to die or be terminated
-        concurrent.futures.wait(
-            futures, return_when=concurrent.futures.FIRST_COMPLETED
-        )
+        concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
 
         # Ensure all daemons are terminated; all are killed if one dies
         for daemon in daemons.values():

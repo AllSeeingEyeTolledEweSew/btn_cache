@@ -46,13 +46,9 @@ def dump_value(out: TextIO, value: Any) -> None:
         raise TypeError(f"unsupported value: {value}")
 
 
-def dump_conn(
-    out: TextIO, conn: sqlite3.Connection, include_schema=False
-) -> None:
+def dump_conn(out: TextIO, conn: sqlite3.Connection, include_schema=False) -> None:
     schema_cur = conn.cursor()
-    schema_cur.execute(
-        "select name, sql from sqlite_master where type = 'table'"
-    )
+    schema_cur.execute("select name, sql from sqlite_master where type = 'table'")
     for name, sql in cast(Iterator[Tuple[str, str]], schema_cur):
         # Write CREATE TABLE first
         if include_schema:

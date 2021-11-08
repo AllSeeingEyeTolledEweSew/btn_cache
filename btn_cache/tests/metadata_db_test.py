@@ -58,13 +58,9 @@ class TableStateDelta:
     @classmethod
     def diff(cls: Type[_D], a: TableState, b: TableState) -> _D:
         disappeared = set(a.updated_at) - set(b.updated_at)
-        went_backward = {
-            i for i in a.updated_at if a.updated_at[i] > b.updated_at[i]
-        }
+        went_backward = {i for i in a.updated_at if a.updated_at[i] > b.updated_at[i]}
         new = set(b.updated_at) - set(a.updated_at)
-        modified = {
-            i for i in a.updated_at if a.updated_at[i] < b.updated_at[i]
-        }
+        modified = {i for i in a.updated_at if a.updated_at[i] < b.updated_at[i]}
         deleted = b.deleted - a.deleted
         undeleted = a.deleted - b.deleted
 
@@ -93,9 +89,7 @@ class TableStateDelta:
         self.modified: _S
         self.deleted: _S
         self.undeleted: _S
-        self.set(
-            modified=modified, new=new, deleted=deleted, undeleted=undeleted
-        )
+        self.set(modified=modified, new=new, deleted=deleted, undeleted=undeleted)
 
     def set(
         self,
@@ -160,9 +154,7 @@ class ChangeChecker:
         )
         return self
 
-    def check(
-        self, table: str, a_state: TableState, expected: TableStateDelta
-    ) -> None:
+    def check(self, table: str, a_state: TableState, expected: TableStateDelta) -> None:
         b_state = TableState(self.conn, table)
 
         diff = TableStateDelta.diff(a_state, b_state)
@@ -183,9 +175,7 @@ class ChangeChecker:
             return
 
         self.check("series", self.a_series, self.expected_series_delta)
-        self.check(
-            "torrent_entry_group", self.a_group, self.expected_group_delta
-        )
+        self.check("torrent_entry_group", self.a_group, self.expected_group_delta)
         self.check("torrent_entry", self.a_entry, self.expected_entry_delta)
 
 
@@ -491,9 +481,7 @@ class UpdateTorrentEntryTest(BaseMetadataTest):
 
         self.entry["ReleaseName"] = ""
         self.update_entry(self.entry)
-        values = cur.execute(
-            "select release_name from torrent_entry"
-        ).fetchall()
+        values = cur.execute("select release_name from torrent_entry").fetchall()
         self.assertEqual(values, [(None,)])
 
         self.entry["Resolution"] = ""

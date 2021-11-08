@@ -16,9 +16,7 @@ from typing import Union
 import better_bencode
 import dbver
 
-_MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
-    application_id=257675987
-)
+_MIGRATIONS = dbver.SemverMigrations[dbver.Connection](application_id=257675987)
 
 
 @_MIGRATIONS.migrates(0, 1000000)

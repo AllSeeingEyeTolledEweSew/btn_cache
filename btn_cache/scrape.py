@@ -85,9 +85,7 @@ class _Base(daemon.Daemon):
                 wait_time = max(wait_time, backoff)
             if self._wait and wait_time > 0:
                 with self._condition:
-                    self._condition.wait_for(
-                        self._terminated.is_set, wait_time
-                    )
+                    self._condition.wait_for(self._terminated.is_set, wait_time)
 
 
 class _API(_Base):
@@ -183,11 +181,7 @@ def _user_write(pool: dbver.Pool) -> Iterator[Tuple[sqlite3.Connection, int]]:
 
 class MetadataScraper(_API, _Pool):
     def __init__(
-        self,
-        *,
-        api: api_lib.RateLimitedAPI,
-        metadata_pool: dbver.Pool,
-        wait=True
+        self, *, api: api_lib.RateLimitedAPI, metadata_pool: dbver.Pool, wait=True
     ) -> None:
         _API.__init__(self, api=api, wait=wait)
         self._metadata_pool = metadata_pool
@@ -196,9 +190,7 @@ class MetadataScraper(_API, _Pool):
     def _step_inner(self) -> float:
         _LOG.info("scraping metadata at offset %d", self._offset)
         result = self._api.getTorrents(results=2 ** 31, offset=self._offset)
-        update = metadata_db.UnfilteredGetTorrentsResultUpdate(
-            self._offset, result
-        )
+        update = metadata_db.UnfilteredGetTorrentsResultUpdate(self._offset, result)
         with _meta_write(self._metadata_pool) as (conn, _):
             update.apply(conn)
         if self._offset + len(result["torrents"]) >= int(result["results"]):

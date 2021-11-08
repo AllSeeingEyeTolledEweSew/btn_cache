@@ -92,8 +92,7 @@ def _te_json_to_rows(entry: api_types.TorrentEntry) -> _Rows:
         poster=entry["SeriesPoster"] or None,
         imdb_id=entry["ImdbID"] or None,
         tvdb_id=(int(entry["TvdbID"]) if entry["TvdbID"] else None) or None,
-        tvrage_id=(int(entry["TvrageID"]) if entry["TvrageID"] else None)
-        or None,
+        tvrage_id=(int(entry["TvrageID"]) if entry["TvrageID"] else None) or None,
         youtube_trailer=entry["YoutubeTrailer"] or None,
         deleted=False,
     )
@@ -141,9 +140,7 @@ def _te_json_to_row_array(*entries: api_types.TorrentEntry) -> _RowArray:
     return cast(_RowArray, tuple(zip(*row_tuples)))
 
 
-_MIGRATIONS = dbver.SemverMigrations[dbver.Connection](
-    application_id=-1353141288
-)
+_MIGRATIONS = dbver.SemverMigrations[dbver.Connection](application_id=-1353141288)
 
 
 @_MIGRATIONS.migrates(0, 1000000)
@@ -199,9 +196,7 @@ def _update_groups(conn: dbver.Connection, *rows: _GroupRow) -> None:
     cur.executemany(query, rows)
 
 
-def _update_torrent_entries(
-    conn: dbver.Connection, *rows: _TorrentEntryRow
-) -> None:
+def _update_torrent_entries(conn: dbver.Connection, *rows: _TorrentEntryRow) -> None:
     if not rows:
         return
     cur = conn.cursor()
@@ -235,9 +230,7 @@ class TorrentEntriesUpdate:
 
 
 class UnfilteredGetTorrentsResultUpdate(TorrentEntriesUpdate):
-    def __init__(
-        self, offset: int, result: api_types.GetTorrentsResult
-    ) -> None:
+    def __init__(self, offset: int, result: api_types.GetTorrentsResult) -> None:
         super().__init__(*result["torrents"].values())
         self._total = int(result["results"])
         self._offset = offset
@@ -278,18 +271,14 @@ class UnfilteredGetTorrentsResultUpdate(TorrentEntriesUpdate):
 
 
 class ParsedTorrentInfoUpdate:
-    def __init__(
-        self, info_dict: Dict[bytes, Any], torrent_entry_id: int = 0
-    ) -> None:
+    def __init__(self, info_dict: Dict[bytes, Any], torrent_entry_id: int = 0) -> None:
         self._rows: List[_FileInfoRow] = []
         self._torrent_entry_id = torrent_entry_id
         encoding: Optional[str]
         if b"files" in info_dict:
             offset = 0
             files = cast(List[Dict[bytes, Any]], info_dict[b"files"])
-            utf8 = b"name.utf-8" in info_dict and all(
-                b"path.utf-8" in v for v in files
-            )
+            utf8 = b"name.utf-8" in info_dict and all(b"path.utf-8" in v for v in files)
             for index, file_dict in enumerate(files):
                 length = cast(int, file_dict[b"length"])
                 encoding = None
@@ -347,11 +336,7 @@ class ParsedTorrentInfoUpdate:
                 ") values (",
                 ",".join(f":{k}" for k in cols),
                 ") on conflict (id, file_index) do update set ",
-                ",".join(
-                    f"{k} = :{k}"
-                    for k in cols
-                    if k not in ("id", "file_index")
-                ),
+                ",".join(f"{k} = :{k}" for k in cols if k not in ("id", "file_index")),
             )
         )
         conn.cursor().executemany(query, self._rows)

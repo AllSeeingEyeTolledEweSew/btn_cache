@@ -15,10 +15,7 @@ import re
 
 TRACKER_REGEXES = (
     re.compile(r"https?://landof.tv/(?P<passkey>[a-z0-9]{32})/"),
-    re.compile(
-        r"https?://tracker.broadcasthe.net:34001/"
-        r"(?P<passkey>[a-z0-9]{32})/"
-    ),
+    re.compile(r"https?://tracker.broadcasthe.net:34001/(?P<passkey>[a-z0-9]{32})/"),
 )
 """The minimum time to seed an episode torrent, in seconds."""
 EPISODE_SEED_TIME = 24 * 3600

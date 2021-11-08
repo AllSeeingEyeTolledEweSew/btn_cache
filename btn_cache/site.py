@@ -45,9 +45,7 @@ class UserAccess:
             rate_limiter = ratelimit.RateLimiter()
         self._rate_limiter = rate_limiter
         for prefix in ("https://broadcasthe.net", "http://broadcasthe.net"):
-            ratelimit.ratelimit_session(
-                self._session, prefix, self._rate_limiter
-            )
+            ratelimit.ratelimit_session(self._session, prefix, self._rate_limiter)
         self._auth = auth
 
     def get_rate_limiter(self) -> ratelimit.RateLimiter:

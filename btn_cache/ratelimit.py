@@ -113,11 +113,7 @@ class RateLimiter:
     _BURST = 10
 
     def __init__(
-        self,
-        *,
-        rate: float = _RATE,
-        burst: float = _BURST,
-        blocking: bool = True
+        self, *, rate: float = _RATE, burst: float = _BURST, blocking: bool = True
     ) -> None:
         self._rate = rate
         self._burst = burst

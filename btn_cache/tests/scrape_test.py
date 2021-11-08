@@ -97,9 +97,7 @@ class APIErrorsBase(APITestBase, abc.ABC):
         raise NotImplementedError
 
     def test_api_http_error(self) -> None:
-        self.requests_mocker.post(
-            "https://api.broadcasthe.net/", status_code=500
-        )
+        self.requests_mocker.post("https://api.broadcasthe.net/", status_code=500)
         with self.assertRaises(scrape.NonFatal):
             self.step()
 
@@ -111,9 +109,7 @@ class APIErrorsBase(APITestBase, abc.ABC):
             self.step()
 
     def test_api_invalid_key(self) -> None:
-        self.mock_api_error(
-            "Invalid API Key", api_types.ErrorCode.INVALID_API_KEY
-        )
+        self.mock_api_error("Invalid API Key", api_types.ErrorCode.INVALID_API_KEY)
         with self.assertRaises(api_lib.InvalidAPIKeyError):
             self.step()
 
@@ -137,12 +133,8 @@ class UserAccessErrorsBase(RequestsMockerTestBase, abc.ABC):
             self.step()
 
     def test_site_connection_error(self) -> None:
-        self.requests_mocker.post(
-            requests_mock.ANY, exc=requests.ConnectionError()
-        )
-        self.requests_mocker.get(
-            requests_mock.ANY, exc=requests.ConnectionError()
-        )
+        self.requests_mocker.post(requests_mock.ANY, exc=requests.ConnectionError())
+        self.requests_mocker.get(requests_mock.ANY, exc=requests.ConnectionError())
         with self.assertRaises(scrape.NonFatal):
             self.step()
 
@@ -186,9 +178,7 @@ TEST_AUTH = site.UserAuth(
 class MetadataScraperTest(APIErrorsBase):
     def setUp(self) -> None:
         super().setUp()
-        self.metadata_conn = sqlite3.Connection(
-            ":memory:", isolation_level=None
-        )
+        self.metadata_conn = sqlite3.Connection(":memory:", isolation_level=None)
         self.metadata_pool = lambda: nullcontext(self.metadata_conn)
 
         self.scraper = scrape.MetadataScraper(
@@ -224,17 +214,13 @@ class MetadataScraperTest(APIErrorsBase):
         wait = self.step()
         self.assertLessEqual(wait, 0)
         self.assertEqual(self.mock1.call_count, 1)
-        cur = self.metadata_conn.cursor().execute(
-            "select id from torrent_entry"
-        )
+        cur = self.metadata_conn.cursor().execute("select id from torrent_entry")
         self.assertEqual({i for i, in cur}, {5, 6, 7, 8, 9})
         # Second step should scrape at further offset
         wait = self.step()
         self.assertLessEqual(wait, 0)
         self.assertEqual(self.mock2.call_count, 1)
-        cur = self.metadata_conn.cursor().execute(
-            "select id from torrent_entry"
-        )
+        cur = self.metadata_conn.cursor().execute("select id from torrent_entry")
         self.assertEqual({i for i, in cur}, {1, 2, 3, 4, 5, 6, 7, 8, 9})
         # Third step should detect end of list, and restart at zero
         wait = self.step()
@@ -253,9 +239,7 @@ class MetadataScraperTest(APIErrorsBase):
 class MetadataTipScraperTest(APIErrorsBase):
     def setUp(self) -> None:
         super().setUp()
-        self.metadata_conn = sqlite3.Connection(
-            ":memory:", isolation_level=None
-        )
+        self.metadata_conn = sqlite3.Connection(":memory:", isolation_level=None)
         self.metadata_pool = lambda: nullcontext(self.metadata_conn)
 
         self.scraper = scrape.MetadataTipScraper(
@@ -281,9 +265,7 @@ class MetadataTipScraperTest(APIErrorsBase):
             entry["TorrentID"] = str(i)
             entry["Time"] = str(i)
             self.torrents[str(i)] = entry
-        result = api_types.GetTorrentsResult(
-            results="5", torrents=self.torrents
-        )
+        result = api_types.GetTorrentsResult(results="5", torrents=self.torrents)
         self.api_mock = self.mock_api_request(
             "getTorrents", [self.key, {}, 2 ** 31, 0], result
         )
@@ -308,9 +290,7 @@ class MetadataTipScraperTest(APIErrorsBase):
 
     def test_step_some_data_in_db(self) -> None:
         metadata_db.upgrade(self.metadata_conn)
-        metadata_db.TorrentEntriesUpdate(self.torrents["3"]).apply(
-            self.metadata_conn
-        )
+        metadata_db.TorrentEntriesUpdate(self.torrents["3"]).apply(self.metadata_conn)
         wait = self.step()
         self.assertGreater(wait, 0)
         self.assertEqual(self.api_mock.call_count, 1)
@@ -327,9 +307,7 @@ class MetadataTipScraperTest(APIErrorsBase):
 class MetadataTipScraperSiteErrorTest(APITestBase, UserAccessErrorsBase):
     def setUp(self) -> None:
         super().setUp()
-        self.metadata_conn = sqlite3.Connection(
-            ":memory:", isolation_level=None
-        )
+        self.metadata_conn = sqlite3.Connection(":memory:", isolation_level=None)
         self.metadata_pool = lambda: nullcontext(self.metadata_conn)
 
         self.scraper = scrape.MetadataTipScraper(
@@ -368,13 +346,9 @@ class SnatchlistScraperTest(APIErrorsBase):
         self.user_conn = sqlite3.Connection(":memory:", isolation_level=None)
         self.user_pool = lambda: nullcontext(self.user_conn)
 
-        self.scraper = scrape.SnatchlistScraper(
-            api=self.api, user_pool=self.user_pool
-        )
+        self.scraper = scrape.SnatchlistScraper(api=self.api, user_pool=self.user_pool)
 
-        self.result1 = api_types.GetUserSnatchlistResult(
-            results="10", torrents={}
-        )
+        self.result1 = api_types.GetUserSnatchlistResult(results="10", torrents={})
         for i in range(6, 11):
             snatch = TEST_SNATCH.copy()
             snatch["TorrentID"] = str(i)
@@ -383,9 +357,7 @@ class SnatchlistScraperTest(APIErrorsBase):
             "getUserSnatchlist", [self.key, 10000, 0], self.result1
         )
 
-        self.result2 = api_types.GetUserSnatchlistResult(
-            results="10", torrents={}
-        )
+        self.result2 = api_types.GetUserSnatchlistResult(results="10", torrents={})
         for i in range(1, 6):
             snatch = TEST_SNATCH.copy()
             snatch["TorrentID"] = str(i)
