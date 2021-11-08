@@ -40,7 +40,9 @@ def mock_request(
 
     response = api_types.Response(result=result, id="dummy_id")
     mock.post(
-        "https://api.broadcasthe.net/", additional_matcher=match, json=response
+        "https://api.broadcasthe.net/",
+        additional_matcher=match,  # type: ignore
+        json=response,
     )
 
 

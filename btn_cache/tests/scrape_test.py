@@ -75,9 +75,9 @@ class APITestBase(RequestsMockerTestBase):
             )
 
         response = api_types.Response(result=result, id="dummy_id")
-        return self.requests_mocker.post(
+        return self.requests_mocker.post(  # type: ignore
             "https://api.broadcasthe.net/",
-            additional_matcher=match,
+            additional_matcher=match,  # type: ignore
             json=response,
         )
 
@@ -86,7 +86,7 @@ class APITestBase(RequestsMockerTestBase):
     ) -> requests_mock.adapter._Matcher:
         error = api_types.Error(message=message, code=code)
         response = api_types.Response(id="dummy_id", error=error)
-        return self.requests_mocker.post(
+        return self.requests_mocker.post(  # type: ignore
             "https://api.broadcasthe.net/", json=response
         )
 

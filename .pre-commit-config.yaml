@@ -33,9 +33,14 @@ repos:
   hooks:
     - id: mypy
       additional_dependencies:
+        # keep in sync with setup.cfg
+        - better-bencode>=0.2.1
         - dbver>=0.4
-        - importlib_resources>=3.3.0
+        - feedparser>=6.0.0,<7
+        - importlib-resources>=3.3.0,<5
         - types-requests
+        # keep in sync with btn_cache/tests/test-requirements.txt
+        - requests-mock>=1.9.3,<2
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.2
   hooks:
