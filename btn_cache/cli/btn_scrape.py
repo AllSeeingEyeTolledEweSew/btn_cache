@@ -128,6 +128,8 @@ def main() -> None:
         cur.execute("pragma temp_store = MEMORY")
         cur.execute("pragma trusted_schema = OFF")
         cur.execute("pragma journal_mode = WAL")
+        cur.execute(f"pragma mmap_size = {2**32}")
+        cur.execute("pragma synchronous = NORMAL")
         return conn
 
     metadata_pool = dbver.null_pool(metadata_factory)
@@ -138,6 +140,8 @@ def main() -> None:
         cur.execute("pragma busy_timeout = 5000")
         cur.execute("pragma trusted_schema = OFF")
         cur.execute("pragma journal_mode = WAL")
+        cur.execute(f"pragma mmap_size = {2**28}")
+        cur.execute("pragma synchronous = NORMAL")
         return conn
 
     user_pool = dbver.null_pool(user_factory)
